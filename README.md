@@ -71,7 +71,7 @@ InsPIRe is immune to all these attacks because queries are encrypted.
 |----------|-------------------|---------|
 | Direct RPC | 2 KB | **None** |
 | Single InsPIRe | 7 MB | Full |
-| Dummy Subsets + 10× dummies | 308 KB | Partial |
+| Dummy Subsets + 10x dummies | 308 KB | Partial |
 | **Two-Lane InsPIRe** | **176 KB** | **Full** |
 
 ## Privacy Analysis
@@ -87,8 +87,8 @@ InsPIRe is immune to all these attacks because queries are encrypted.
 ### Lane Privacy
 
 Which lane you query reveals popularity tier:
-- Hot lane → target is in top 1000 contracts
-- Cold lane → target is elsewhere
+- Hot lane -> target is in top 1000 contracts
+- Cold lane -> target is elsewhere
 
 This is acceptable: knowing someone queries "a popular DeFi contract" doesn't reveal which one (1-in-1M).
 
@@ -107,6 +107,7 @@ Updated weekly based on on-chain analytics:
 | Bridges | Across, Stargate, Hop, Synapse |
 | L2 | Arbitrum, Optimism, Base bridges |
 | Restaking | EigenLayer, Renzo, EtherFi |
+| Privacy | Tornado Cash, Railgun, Privacy Pools, YOLO |
 
 ## Crates
 
