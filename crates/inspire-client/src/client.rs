@@ -51,6 +51,15 @@ pub struct TwoLaneClient {
     cold_state: Option<LaneState>,
 }
 
+impl std::fmt::Debug for TwoLaneClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TwoLaneClient")
+            .field("server_url", &self.server_url)
+            .field("hot_contract_count", &self.router.hot_contract_count())
+            .finish_non_exhaustive()
+    }
+}
+
 impl TwoLaneClient {
     /// Create a new client with the given router and server URL
     pub fn new(router: LaneRouter, server_url: String) -> Self {
@@ -77,15 +86,19 @@ impl TwoLaneClient {
         let cold_crs_resp = self.fetch_crs(Lane::Cold).await?;
         let cold_crs: ServerCrs = serde_json::from_str(&cold_crs_resp.crs)?;
         let cold_sk = generate_secret_key(&cold_crs.params);
+        let cold_entries = cold_crs_resp.entry_count;
         self.cold_state = Some(LaneState {
             crs: cold_crs,
             secret_key: cold_sk,
-            entry_count: cold_crs_resp.entry_count,
+            entry_count: cold_entries,
         });
+        
+        // Update router with cold lane entry count for proper indexing
+        self.router.set_cold_entries(cold_entries);
         
         tracing::info!(
             hot_entries = self.hot_state.as_ref().map(|s| s.entry_count).unwrap_or(0),
-            cold_entries = self.cold_state.as_ref().map(|s| s.entry_count).unwrap_or(0),
+            cold_entries = cold_entries,
             "Client initialized with both lanes"
         );
         
@@ -197,13 +210,24 @@ impl TwoLaneClient {
     }
 
     /// Compute the database index for a contract/slot pair
-    fn compute_index(&self, contract: &Address, _slot: &StorageKey, lane: Lane) -> Result<u64> {
-        if lane == Lane::Hot {
-            if let Some(idx) = self.router.get_hot_index(contract, _slot) {
-                return Ok(idx);
+    fn compute_index(&self, contract: &Address, slot: &StorageKey, lane: Lane) -> Result<u64> {
+        match lane {
+            Lane::Hot => {
+                self.router.get_hot_index(contract, slot).ok_or_else(|| {
+                    ClientError::InvalidResponse(format!(
+                        "Contract {} not found in hot lane manifest or has invalid slot_count",
+                        hex::encode(contract)
+                    ))
+                })
+            }
+            Lane::Cold => {
+                self.router.get_cold_index(contract, slot).ok_or_else(|| {
+                    ClientError::LaneNotAvailable(
+                        "Cold lane not initialized (cold_total_entries = 0)".to_string()
+                    )
+                })
             }
         }
-        Ok(0)
     }
 
     /// Get which lane a contract would be routed to
