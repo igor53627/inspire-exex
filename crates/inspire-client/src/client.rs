@@ -26,13 +26,13 @@ pub struct CrsResponse {
 /// Request to query endpoint
 #[derive(Serialize)]
 struct QueryRequest {
-    query: String,
+    query: ClientQuery,
 }
 
 /// Response from query endpoint
 #[derive(Deserialize)]
 pub struct QueryResponse {
-    pub response: String,
+    pub response: ServerResponse,
     pub lane: Lane,
 }
 
@@ -143,12 +143,10 @@ impl TwoLaneClient {
         
         let response = self.send_query(lane, &client_query).await?;
         
-        let server_response: ServerResponse = serde_json::from_str(&response.response)?;
-        
         let entry = extract(
             &lane_state.crs,
             &client_state,
-            &server_response,
+            &response.response,
             32,
         ).map_err(|e| ClientError::InvalidResponse(e.to_string()))?;
         
@@ -178,11 +176,9 @@ impl TwoLaneClient {
     async fn send_query(&self, lane: Lane, query: &ClientQuery) -> Result<QueryResponse> {
         let url = format!("{}/query/{}", self.server_url, lane);
         
-        let query_json = serde_json::to_string(query)?;
-        
         let resp = self.http
             .post(&url)
-            .json(&QueryRequest { query: query_json })
+            .json(&QueryRequest { query: query.clone() })
             .send()
             .await?;
 

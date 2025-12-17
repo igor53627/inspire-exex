@@ -9,7 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use inspire_core::Lane;
-use inspire_pir::{ClientQuery, params::ShardConfig};
+use inspire_pir::{ClientQuery, ServerResponse, params::ShardConfig};
 
 use crate::error::{Result, ServerError};
 use crate::state::{LaneStats, SharedState};
@@ -24,15 +24,15 @@ pub struct HealthResponse {
 /// PIR query request
 #[derive(Deserialize)]
 pub struct QueryRequest {
-    /// Serialized ClientQuery (JSON)
-    pub query: String,
+    /// Client PIR query
+    pub query: ClientQuery,
 }
 
 /// PIR query response
 #[derive(Serialize)]
 pub struct QueryResponse {
-    /// Serialized ServerResponse (JSON)
-    pub response: String,
+    /// Server PIR response
+    pub response: ServerResponse,
     /// Lane that processed the query
     pub lane: Lane,
 }
@@ -87,19 +87,10 @@ async fn query(
 ) -> Result<Json<QueryResponse>> {
     let lane = parse_lane(&lane)?;
     
-    let client_query: ClientQuery = serde_json::from_str(&req.query)
-        .map_err(|e| ServerError::InvalidQuery(format!("Invalid query JSON: {}", e)))?;
-    
     let state = state.read().await;
-    let response = state.process_query(lane, &client_query)?;
-    
-    let response_json = serde_json::to_string(&response)
-        .map_err(|e| ServerError::Internal(format!("Failed to serialize response: {}", e)))?;
+    let response = state.process_query(lane, &req.query)?;
 
-    Ok(Json(QueryResponse { 
-        response: response_json, 
-        lane 
-    }))
+    Ok(Json(QueryResponse { response, lane }))
 }
 
 /// Parse lane from URL path
