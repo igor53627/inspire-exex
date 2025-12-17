@@ -226,10 +226,18 @@ impl ServerState {
     }
 
     /// Load both lanes from disk and swap in the new snapshot
+    ///
+    /// Returns an error if no lanes could be loaded (server cannot serve queries).
     pub fn load_lanes(&self) -> Result<()> {
         let hot_lane = self.try_load_hot_lane();
         let cold_lane = self.try_load_cold_lane();
         let router = self.try_load_router();
+
+        if hot_lane.is_none() && cold_lane.is_none() {
+            return Err(ServerError::Internal(
+                "Failed to load any lanes - server cannot serve queries".to_string(),
+            ));
+        }
 
         let block_number = router.as_ref().map(|r| r.manifest().block_number);
 
@@ -371,7 +379,7 @@ impl ServerState {
         }
 
         let config = ShardConfig {
-            shard_size_bytes: 128 * 1024,
+            shard_size_bytes: self.config.shard_size_bytes,
             entry_size_bytes: self.config.entry_size,
             total_entries: expected_entries,
         };

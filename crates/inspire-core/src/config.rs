@@ -40,6 +40,13 @@ pub struct TwoLaneConfig {
     /// Use mmap mode for database loading (faster swaps)
     #[serde(default)]
     pub use_mmap: bool,
+    /// Shard size in bytes (for mmap mode, default 128KB)
+    #[serde(default = "default_shard_size")]
+    pub shard_size_bytes: u64,
+}
+
+fn default_shard_size() -> u64 {
+    128 * 1024
 }
 
 fn default_version() -> String {
@@ -79,6 +86,7 @@ impl TwoLaneConfig {
             hot_lane_shards: Some(hot.join("shards")),
             cold_lane_shards: Some(cold.join("shards")),
             use_mmap: true,
+            shard_size_bytes: default_shard_size(),
         }
     }
 

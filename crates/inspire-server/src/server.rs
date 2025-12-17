@@ -51,8 +51,7 @@ impl TwoLaneServer {
 pub struct ServerBuilder {
     config: TwoLaneConfig,
     addr: SocketAddr,
-    load_hot: bool,
-    load_cold: bool,
+    load_lanes: bool,
 }
 
 impl ServerBuilder {
@@ -60,8 +59,7 @@ impl ServerBuilder {
         Self {
             config,
             addr: ([127, 0, 0, 1], 3000).into(),
-            load_hot: true,
-            load_cold: true,
+            load_lanes: true,
         }
     }
 
@@ -75,22 +73,18 @@ impl ServerBuilder {
         self
     }
 
-    pub fn hot_only(mut self) -> Self {
-        self.load_hot = true;
-        self.load_cold = false;
-        self
-    }
 
-    pub fn cold_only(mut self) -> Self {
-        self.load_hot = false;
-        self.load_cold = true;
+
+    /// Skip loading lanes on build (useful for testing)
+    pub fn skip_load(mut self) -> Self {
+        self.load_lanes = false;
         self
     }
 
     pub fn build(self) -> Result<TwoLaneServer> {
         let server = TwoLaneServer::new(self.config, self.addr);
 
-        if self.load_hot || self.load_cold {
+        if self.load_lanes {
             server.load_lanes()?;
         }
 
