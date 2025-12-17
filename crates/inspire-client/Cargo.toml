@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "inspire-client"
+path = "src/bin/main.rs"
+
 [dependencies]
 inspire-core = { path = "../inspire-core" }
 serde = { workspace = true }
@@ -12,3 +16,6 @@ tokio = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+tracing-subscriber = { workspace = true }
