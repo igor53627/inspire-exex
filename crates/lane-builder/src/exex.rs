@@ -79,12 +79,10 @@ pub async fn lane_updater_exex<Node: FullNodeComponents>(
 
     let reload_client = ReloadClient::new(&config.server_url);
     
-    if let Ok(healthy) = reload_client.health().await {
-        if healthy {
-            info!("PIR server is healthy");
-        } else {
-            warn!("PIR server health check failed");
-        }
+    match reload_client.health().await {
+        Ok(true) => info!("PIR server is healthy"),
+        Ok(false) => warn!("PIR server health check failed"),
+        Err(e) => warn!(error = %e, "PIR server health check error - server may be unavailable"),
     }
 
     Ok(lane_updater_loop(ctx, config, reload_client))

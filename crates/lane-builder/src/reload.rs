@@ -1,5 +1,7 @@
 //! Reload client for triggering server database updates
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,8 +22,14 @@ pub struct ReloadClient {
 
 impl ReloadClient {
     pub fn new(server_url: impl Into<String>) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to build HTTP client");
+        
         Self {
-            client: reqwest::Client::new(),
+            client,
             server_url: server_url.into(),
         }
     }
