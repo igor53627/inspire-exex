@@ -78,7 +78,7 @@ impl TwoLaneConfig {
             config_hash: None,
             hot_lane_shards: Some(hot.join("shards")),
             cold_lane_shards: Some(cold.join("shards")),
-            use_mmap: false,
+            use_mmap: true,
         }
     }
 
