@@ -31,6 +31,15 @@ pub struct TwoLaneConfig {
     /// Configuration hash for change detection
     #[serde(default)]
     pub config_hash: Option<String>,
+    /// Hot lane shards directory (for mmap mode)
+    #[serde(default)]
+    pub hot_lane_shards: Option<PathBuf>,
+    /// Cold lane shards directory (for mmap mode)
+    #[serde(default)]
+    pub cold_lane_shards: Option<PathBuf>,
+    /// Use mmap mode for database loading (faster swaps)
+    #[serde(default)]
+    pub use_mmap: bool,
 }
 
 fn default_version() -> String {
@@ -67,6 +76,9 @@ impl TwoLaneConfig {
             entry_size: crate::constants::ENTRY_SIZE,
             version: PROTOCOL_VERSION.to_string(),
             config_hash: None,
+            hot_lane_shards: Some(hot.join("shards")),
+            cold_lane_shards: Some(cold.join("shards")),
+            use_mmap: false,
         }
     }
 
@@ -74,6 +86,12 @@ impl TwoLaneConfig {
     pub fn with_entries(mut self, hot: u64, cold: u64) -> Self {
         self.hot_entries = hot;
         self.cold_entries = cold;
+        self
+    }
+
+    /// Enable mmap mode for faster database loading/swapping
+    pub fn with_mmap(mut self, enabled: bool) -> Self {
+        self.use_mmap = enabled;
         self
     }
 

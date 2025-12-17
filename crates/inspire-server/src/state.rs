@@ -2,29 +2,62 @@
 //!
 //! Uses ArcSwap for zero-contention reads during PIR queries.
 //! Updates atomically swap in a new snapshot without blocking ongoing queries.
+//!
+//! Supports two loading modes:
+//! - In-memory (JSON): Loads entire database into RAM
+//! - Mmap (binary): Memory-maps shard files for O(1) swap time
 
 use std::path::Path;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use inspire_core::{HotLaneManifest, Lane, LaneRouter, TwoLaneConfig};
-use inspire_pir::{params::ShardConfig, ClientQuery, EncodedDatabase, ServerCrs, ServerResponse, respond};
+use inspire_pir::{
+    params::ShardConfig, respond, respond_mmap, ClientQuery, EncodedDatabase, MmapDatabase,
+    ServerCrs, ServerResponse,
+};
 
 use crate::error::{Result, ServerError};
 
-/// Lane-specific PIR data (CRS + encoded database)
+/// Database storage mode
+pub enum LaneDatabase {
+    /// In-memory encoded database (loaded from JSON)
+    InMemory(EncodedDatabase),
+    /// Memory-mapped database (binary shards, O(1) swap)
+    Mmap(MmapDatabase),
+}
+
+impl LaneDatabase {
+    /// Get shard configuration
+    pub fn shard_config(&self) -> ShardConfig {
+        match self {
+            LaneDatabase::InMemory(db) => db.config.clone(),
+            LaneDatabase::Mmap(db) => db.config.clone(),
+        }
+    }
+
+    /// Get total entry count
+    pub fn entry_count(&self) -> u64 {
+        match self {
+            LaneDatabase::InMemory(db) => db.config.total_entries,
+            LaneDatabase::Mmap(db) => db.config.total_entries,
+        }
+    }
+}
+
+/// Lane-specific PIR data (CRS + database)
 pub struct LaneData {
     /// Server CRS for this lane
     pub crs: ServerCrs,
-    /// Encoded database for this lane
-    pub encoded_db: EncodedDatabase,
+    /// Database (in-memory or mmap)
+    pub database: LaneDatabase,
     /// Number of entries in this lane
     pub entry_count: u64,
 }
 
 impl LaneData {
-    /// Load lane data from disk
-    pub fn load(crs_path: &Path, db_path: &Path) -> Result<Self> {
+    /// Load lane data from disk (in-memory mode)
+    pub fn load_inmemory(crs_path: &Path, db_path: &Path) -> Result<Self> {
         let crs_json = std::fs::read_to_string(crs_path)?;
         let crs: ServerCrs = serde_json::from_str(&crs_json)
             .map_err(|e| ServerError::Internal(format!("Failed to parse CRS: {}", e)))?;
@@ -37,14 +70,39 @@ impl LaneData {
 
         Ok(Self {
             crs,
-            encoded_db,
+            database: LaneDatabase::InMemory(encoded_db),
+            entry_count,
+        })
+    }
+
+    /// Load lane data with mmap (O(1) swap time)
+    pub fn load_mmap(crs_path: &Path, shards_dir: &Path, config: ShardConfig) -> Result<Self> {
+        let crs_json = std::fs::read_to_string(crs_path)?;
+        let crs: ServerCrs = serde_json::from_str(&crs_json)
+            .map_err(|e| ServerError::Internal(format!("Failed to parse CRS: {}", e)))?;
+
+        let mmap_db = MmapDatabase::open(shards_dir, config.clone())
+            .map_err(|e| ServerError::Internal(format!("Failed to open mmap database: {}", e)))?;
+
+        let entry_count = config.total_entries;
+
+        Ok(Self {
+            crs,
+            database: LaneDatabase::Mmap(mmap_db),
             entry_count,
         })
     }
 
     /// Process a PIR query and return the response
     pub fn process_query(&self, query: &ClientQuery) -> Result<ServerResponse> {
-        respond(&self.crs, &self.encoded_db, query).map_err(|e| ServerError::PirError(e.to_string()))
+        match &self.database {
+            LaneDatabase::InMemory(db) => {
+                respond(&self.crs, db, query).map_err(|e| ServerError::PirError(e.to_string()))
+            }
+            LaneDatabase::Mmap(db) => {
+                respond_mmap(&self.crs, db, query).map_err(|e| ServerError::PirError(e.to_string()))
+            }
+        }
     }
 
     /// Get CRS as JSON string
@@ -54,7 +112,7 @@ impl LaneData {
 
     /// Get shard configuration for query building
     pub fn shard_config(&self) -> ShardConfig {
-        self.encoded_db.config.clone()
+        self.database.shard_config()
     }
 }
 
@@ -106,7 +164,11 @@ impl DbSnapshot {
             cold_loaded: self.cold_lane.is_some(),
             hot_entries: self.hot_lane.as_ref().map(|l| l.entry_count).unwrap_or(0),
             cold_entries: self.cold_lane.as_ref().map(|l| l.entry_count).unwrap_or(0),
-            hot_contracts: self.router.as_ref().map(|r| r.hot_contract_count()).unwrap_or(0),
+            hot_contracts: self
+                .router
+                .as_ref()
+                .map(|r| r.hot_contract_count())
+                .unwrap_or(0),
             block_number: self.block_number,
         }
     }
@@ -201,6 +263,7 @@ impl ServerState {
             old_block = ?old_block,
             new_block = ?new_block,
             duration_ms = duration.as_millis(),
+            mmap_mode = self.config.use_mmap,
             "Database snapshot reloaded"
         );
 
@@ -210,25 +273,28 @@ impl ServerState {
             reload_duration_ms: duration.as_millis() as u64,
             hot_loaded: new_snapshot.hot_lane.is_some(),
             cold_loaded: new_snapshot.cold_lane.is_some(),
+            mmap_mode: self.config.use_mmap,
         })
     }
 
     fn try_load_hot_lane(&self) -> Option<LaneData> {
         let crs_path = &self.config.hot_lane_crs;
-        let db_path = &self.config.hot_lane_db;
 
         if !crs_path.exists() {
             tracing::warn!("Hot lane CRS not found: {}", crs_path.display());
             return None;
         }
 
-        match LaneData::load(crs_path, db_path) {
+        let result = if self.config.use_mmap {
+            self.load_lane_mmap(Lane::Hot)
+        } else {
+            self.load_lane_inmemory(Lane::Hot)
+        };
+
+        match result {
             Ok(lane_data) => {
-                if let Err(e) = self.validate_lane_data(&lane_data, Lane::Hot) {
-                    tracing::warn!("Hot lane validation failed: {}", e);
-                    return None;
-                }
-                tracing::info!(entries = lane_data.entry_count, "Hot lane loaded");
+                let mode = if self.config.use_mmap { "mmap" } else { "inmemory" };
+                tracing::info!(entries = lane_data.entry_count, mode, "Hot lane loaded");
                 Some(lane_data)
             }
             Err(e) => {
@@ -240,20 +306,22 @@ impl ServerState {
 
     fn try_load_cold_lane(&self) -> Option<LaneData> {
         let crs_path = &self.config.cold_lane_crs;
-        let db_path = &self.config.cold_lane_db;
 
         if !crs_path.exists() {
             tracing::warn!("Cold lane CRS not found: {}", crs_path.display());
             return None;
         }
 
-        match LaneData::load(crs_path, db_path) {
+        let result = if self.config.use_mmap {
+            self.load_lane_mmap(Lane::Cold)
+        } else {
+            self.load_lane_inmemory(Lane::Cold)
+        };
+
+        match result {
             Ok(lane_data) => {
-                if let Err(e) = self.validate_lane_data(&lane_data, Lane::Cold) {
-                    tracing::warn!("Cold lane validation failed: {}", e);
-                    return None;
-                }
-                tracing::info!(entries = lane_data.entry_count, "Cold lane loaded");
+                let mode = if self.config.use_mmap { "mmap" } else { "inmemory" };
+                tracing::info!(entries = lane_data.entry_count, mode, "Cold lane loaded");
                 Some(lane_data)
             }
             Err(e) => {
@@ -261,6 +329,55 @@ impl ServerState {
                 None
             }
         }
+    }
+
+    fn load_lane_inmemory(&self, lane: Lane) -> Result<LaneData> {
+        let (crs_path, db_path) = match lane {
+            Lane::Hot => (&self.config.hot_lane_crs, &self.config.hot_lane_db),
+            Lane::Cold => (&self.config.cold_lane_crs, &self.config.cold_lane_db),
+        };
+
+        let lane_data = LaneData::load_inmemory(crs_path, db_path)?;
+        self.validate_lane_data(&lane_data, lane)?;
+        Ok(lane_data)
+    }
+
+    fn load_lane_mmap(&self, lane: Lane) -> Result<LaneData> {
+        let (crs_path, shards_dir, expected_entries) = match lane {
+            Lane::Hot => (
+                &self.config.hot_lane_crs,
+                self.config.hot_lane_shards.as_ref(),
+                self.config.hot_entries,
+            ),
+            Lane::Cold => (
+                &self.config.cold_lane_crs,
+                self.config.cold_lane_shards.as_ref(),
+                self.config.cold_entries,
+            ),
+        };
+
+        let shards_dir = shards_dir.ok_or_else(|| {
+            ServerError::Internal(format!(
+                "{:?} lane shards directory not configured for mmap mode",
+                lane
+            ))
+        })?;
+
+        if !shards_dir.exists() {
+            return Err(ServerError::Internal(format!(
+                "Shards directory not found: {}",
+                shards_dir.display()
+            )));
+        }
+
+        let config = ShardConfig {
+            shard_size_bytes: 128 * 1024,
+            entry_size_bytes: self.config.entry_size,
+            total_entries: expected_entries,
+        };
+
+        let lane_data = LaneData::load_mmap(crs_path, shards_dir, config)?;
+        Ok(lane_data)
     }
 
     fn try_load_router(&self) -> Option<LaneRouter> {
@@ -292,7 +409,7 @@ impl ServerState {
             Lane::Cold => (self.config.cold_entries, "cold"),
         };
 
-        if lane_data.entry_count != expected_entries {
+        if expected_entries > 0 && lane_data.entry_count != expected_entries {
             return Err(ServerError::ConfigMismatch {
                 field: format!("{}_entries", lane_name),
                 config_value: expected_entries.to_string(),
@@ -300,8 +417,8 @@ impl ServerState {
             });
         }
 
-        let db_entry_size = lane_data.encoded_db.config.entry_size_bytes as usize;
-        if db_entry_size != self.config.entry_size {
+        let db_entry_size = lane_data.shard_config().entry_size_bytes as usize;
+        if self.config.entry_size > 0 && db_entry_size != self.config.entry_size {
             return Err(ServerError::ConfigMismatch {
                 field: "entry_size".to_string(),
                 config_value: self.config.entry_size.to_string(),
@@ -321,6 +438,7 @@ pub struct ReloadResult {
     pub reload_duration_ms: u64,
     pub hot_loaded: bool,
     pub cold_loaded: bool,
+    pub mmap_mode: bool,
 }
 
 /// Shared server state type (now just Arc, no RwLock needed)
