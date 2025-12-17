@@ -15,6 +15,13 @@ pub enum ServerError {
     #[error("PIR error: {0}")]
     PirError(String),
 
+    #[error("Config mismatch: {field} - config says {config_value}, but loaded data has {actual_value}")]
+    ConfigMismatch {
+        field: String,
+        config_value: String,
+        actual_value: String,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -31,6 +38,7 @@ impl IntoResponse for ServerError {
             ServerError::LaneNotLoaded(_) => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             ServerError::InvalidQuery(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             ServerError::PirError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            ServerError::ConfigMismatch { .. } => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             ServerError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             ServerError::Json(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             ServerError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),

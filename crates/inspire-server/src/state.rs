@@ -88,6 +88,8 @@ impl ServerState {
 
         let lane_data = LaneData::load(crs_path, db_path)?;
         
+        self.validate_lane_data(&lane_data, Lane::Hot)?;
+        
         tracing::info!(
             entries = lane_data.entry_count,
             "Hot lane loaded"
@@ -118,12 +120,41 @@ impl ServerState {
 
         let lane_data = LaneData::load(crs_path, db_path)?;
         
+        self.validate_lane_data(&lane_data, Lane::Cold)?;
+        
         tracing::info!(
             entries = lane_data.entry_count,
             "Cold lane loaded"
         );
         
         self.cold_lane = Some(lane_data);
+
+        Ok(())
+    }
+
+    /// Validate that loaded lane data matches the configuration
+    fn validate_lane_data(&self, lane_data: &LaneData, lane: Lane) -> Result<()> {
+        let (expected_entries, lane_name) = match lane {
+            Lane::Hot => (self.config.hot_entries, "hot"),
+            Lane::Cold => (self.config.cold_entries, "cold"),
+        };
+
+        if lane_data.entry_count != expected_entries {
+            return Err(ServerError::ConfigMismatch {
+                field: format!("{}_entries", lane_name),
+                config_value: expected_entries.to_string(),
+                actual_value: lane_data.entry_count.to_string(),
+            });
+        }
+
+        let db_entry_size = lane_data.encoded_db.config.entry_size_bytes as usize;
+        if db_entry_size != self.config.entry_size {
+            return Err(ServerError::ConfigMismatch {
+                field: "entry_size".to_string(),
+                config_value: self.config.entry_size.to_string(),
+                actual_value: db_entry_size.to_string(),
+            });
+        }
 
         Ok(())
     }
