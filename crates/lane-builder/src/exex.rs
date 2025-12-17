@@ -16,6 +16,8 @@
 //! - `lane_updater_reload_errors_total`: Total reload errors
 //! - `lane_updater_blocks_processed`: Total blocks processed
 //! - `lane_updater_reorgs_total`: Total chain reorgs detected
+//! - `lane_updater_reverts_total`: Total chain reverts detected
+//! - `lane_updater_debounce_skips_total`: Reloads skipped due to debouncing
 
 #![cfg(feature = "exex")]
 
@@ -37,6 +39,7 @@ const METRIC_RELOAD_DURATION_MS: &str = "lane_updater_reload_duration_ms";
 const METRIC_RELOAD_ERRORS: &str = "lane_updater_reload_errors_total";
 const METRIC_BLOCKS_PROCESSED: &str = "lane_updater_blocks_processed";
 const METRIC_REORGS: &str = "lane_updater_reorgs_total";
+const METRIC_REVERTS: &str = "lane_updater_reverts_total";
 const METRIC_DEBOUNCE_SKIPS: &str = "lane_updater_debounce_skips_total";
 
 /// Configuration for the lane updater ExEx
@@ -136,10 +139,32 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                 ctx.events.send(ExExEvent::FinishedHeight(new.tip().num_hash()))?;
             }
             ExExNotification::ChainReverted { old } => {
+                counter!(METRIC_REVERTS).increment(1);
+                
                 warn!(
                     reverted_chain = ?old.range(),
-                    "Chain reverted - lane databases may need rebuild"
+                    "Chain reverted - triggering lane rebuild"
                 );
+
+                let start = Instant::now();
+                match trigger_lane_update(&reload_client).await {
+                    Ok(result) => {
+                        let latency_ms = start.elapsed().as_millis() as f64;
+                        counter!(METRIC_RELOAD_TOTAL).increment(1);
+                        histogram!(METRIC_RELOAD_DURATION_MS).record(latency_ms);
+                        
+                        info!(
+                            new_block = ?result.new_block_number,
+                            duration_ms = %latency_ms,
+                            "Lane databases reloaded after revert"
+                        );
+                        last_reload = Instant::now();
+                    }
+                    Err(e) => {
+                        counter!(METRIC_RELOAD_ERRORS).increment(1);
+                        error!(error = %e, "Failed to reload after revert");
+                    }
+                }
             }
             ExExNotification::ChainReorged { old, new } => {
                 counter!(METRIC_REORGS).increment(1);
@@ -162,12 +187,15 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                             duration_ms = %latency_ms,
                             "Lane databases reloaded after reorg"
                         );
+                        last_reload = Instant::now();
                     }
                     Err(e) => {
                         counter!(METRIC_RELOAD_ERRORS).increment(1);
                         error!(error = %e, "Failed to reload after reorg");
                     }
                 }
+
+                ctx.events.send(ExExEvent::FinishedHeight(new.tip().num_hash()))?;
             }
         }
     }
