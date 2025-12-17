@@ -1,0 +1,118 @@
+//! End-to-end integration tests for Two-Lane PIR
+//!
+//! Tests the full pipeline: lane-builder -> server -> client
+
+use inspire_core::{HotLaneManifest, Lane, LaneRouter, TwoLaneConfig};
+use inspire_client::TwoLaneClient;
+use lane_builder::HotLaneBuilder;
+
+/// Test that lane routing works correctly
+#[test]
+fn test_lane_routing_e2e() {
+    let mut manifest = HotLaneManifest::new(12345);
+    
+    let usdc: [u8; 20] = [0xa0, 0xb8, 0x69, 0x91, 0xc6, 0x21, 0x8b, 0x36, 0xc1, 0xd1,
+                          0x9d, 0x4a, 0x2e, 0x9e, 0xb0, 0xce, 0x36, 0x06, 0xeb, 0x48];
+    let weth: [u8; 20] = [0xc0, 0x2a, 0xaa, 0x39, 0xb2, 0x23, 0xfe, 0x8d, 0x0a, 0x0e,
+                          0x5c, 0x4f, 0x27, 0xea, 0xd9, 0x08, 0x3c, 0x75, 0x6c, 0xc2];
+    let unknown: [u8; 20] = [0x99; 20];
+    
+    manifest.add_contract(usdc, "USDC".into(), 1000, "stablecoin".into());
+    manifest.add_contract(weth, "WETH".into(), 500, "token".into());
+    
+    let router = LaneRouter::new(manifest);
+    
+    assert_eq!(router.route(&usdc), Lane::Hot);
+    assert_eq!(router.route(&weth), Lane::Hot);
+    assert_eq!(router.route(&unknown), Lane::Cold);
+    
+    assert!(router.is_hot(&usdc));
+    assert!(!router.is_hot(&unknown));
+}
+
+/// Test manifest building with the lane builder
+#[test]
+fn test_manifest_building_e2e() {
+    let temp_dir = std::env::temp_dir().join("pir-test-e2e");
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    
+    let manifest = HotLaneBuilder::new(&temp_dir)
+        .at_block(20_000_000)
+        .load_known_contracts()
+        .max_contracts(100)
+        .max_entries(100_000)
+        .build()
+        .unwrap();
+    
+    assert!(manifest.contract_count() > 0);
+    assert!(manifest.contract_count() <= 100);
+    assert!(manifest.total_entries <= 100_000);
+    assert_eq!(manifest.block_number, 20_000_000);
+    
+    let manifest_path = temp_dir.join("manifest.json");
+    assert!(manifest_path.exists());
+    
+    let loaded = HotLaneManifest::load(&manifest_path).unwrap();
+    assert_eq!(loaded.contract_count(), manifest.contract_count());
+    
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+/// Test config creation and serialization
+#[test]
+fn test_config_e2e() {
+    let config = TwoLaneConfig::from_base_dir("/data/pir")
+        .with_entries(1_000_000, 2_700_000_000);
+    
+    assert_eq!(config.hot_entries, 1_000_000);
+    assert_eq!(config.cold_entries, 2_700_000_000);
+    assert_eq!(config.total_entries(), 2_701_000_000);
+    
+    let avg_query = config.estimated_avg_query_size();
+    assert!(avg_query < 100_000);
+}
+
+/// Test client routing without server
+#[test]
+fn test_client_routing_without_server() {
+    let mut manifest = HotLaneManifest::new(12345);
+    manifest.add_contract([0x11u8; 20], "Test1".into(), 100, "token".into());
+    manifest.add_contract([0x22u8; 20], "Test2".into(), 200, "defi".into());
+    
+    let router = LaneRouter::new(manifest);
+    let client = TwoLaneClient::new(router, "http://localhost:9999".into());
+    
+    assert!(client.is_hot(&[0x11u8; 20]));
+    assert!(!client.is_hot(&[0x33u8; 20]));
+    assert_eq!(client.get_lane(&[0x11u8; 20]), Lane::Hot);
+    assert_eq!(client.get_lane(&[0x33u8; 20]), Lane::Cold);
+    assert_eq!(client.hot_contract_count(), 2);
+}
+
+/// Test query size estimation
+#[test]
+fn test_query_size_estimation() {
+    assert_eq!(Lane::Hot.expected_query_size(), 10_000);
+    assert_eq!(Lane::Cold.expected_query_size(), 500_000);
+    
+    let improvement = Lane::Cold.expected_query_size() as f64 / Lane::Hot.expected_query_size() as f64;
+    assert!(improvement >= 50.0);
+}
+
+/// Test privacy contracts are included in hot lane
+#[test]
+fn test_privacy_contracts_in_hot_lane() {
+    use lane_builder::ContractExtractor;
+    
+    let mut extractor = ContractExtractor::new();
+    extractor.load_known_contracts();
+    
+    let manifest = extractor.build_manifest(0);
+    
+    let privacy_contracts: Vec<_> = manifest.contracts
+        .iter()
+        .filter(|c| c.category == "privacy")
+        .collect();
+    
+    assert!(!privacy_contracts.is_empty(), "Privacy contracts should be in hot lane");
+}

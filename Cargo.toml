@@ -1,3 +1,8 @@
+[package]
+name = "pse-pir-exex"
+version = "0.1.0"
+edition = "2021"
+
 [workspace]
 resolver = "2"
 members = [
@@ -6,6 +11,16 @@ members = [
     "crates/inspire-client",
     "crates/lane-builder",
 ]
+
+[dependencies]
+inspire-core = { path = "crates/inspire-core" }
+inspire-server = { path = "crates/inspire-server" }
+inspire-client = { path = "crates/inspire-client" }
+lane-builder = { path = "crates/lane-builder" }
+
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
 
 [workspace.package]
 version = "0.1.0"
