@@ -9,7 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `inspire-client-wasm` crate for browser-based PIR queries (#33)
+  - WASM-compatible PIR client using browser fetch API
+  - ~253 KB WASM bundle size
+  - Exports `PirClient` with `init()`, `query()`, `query_binary()` methods
+  - Uses gloo-net for HTTP requests
+  - TypeScript definitions included
+
 - Seed expansion support for ~50% smaller queries
+
+### Changed
+
+- Updated sigma parameter from 3.2 to 6.4 to match InsPIRe paper security parameters
+  - Affects `default_params()` and `test_params()` in lane-builder
+  - **Breaking**: Existing CRS/DB files must be regenerated with new sigma value
+
+- Refactored inspire-pir to support WASM builds
+  - Added `server` and `cli` feature flags
+  - Server-only deps (axum, tokio, memmap2, reqwest) are now optional
+  - Library can be built with `--no-default-features` for WASM
   - `/query/{lane}/seeded` endpoint for seeded queries
   - `SeededQueryRequest` type on server
   - `ClientBuilder::seed_expansion(bool)` to enable/disable

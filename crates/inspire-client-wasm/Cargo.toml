@@ -1,0 +1,47 @@
+[package]
+name = "inspire-client-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WASM PIR client for browser-based private queries"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+inspire-core = { path = "../inspire-core" }
+inspire-pir = { path = "/Users/user/pse/inspire", default-features = false }
+
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "Headers",
+] }
+gloo-net = { version = "0.6", features = ["http"] }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+
+getrandom = { version = "0.2", features = ["js"] }
+rand = { workspace = true }
+
+thiserror = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[features]
+default = ["console_error_panic_hook"]
+console_error_panic_hook = ["dep:console_error_panic_hook"]
+
+[dependencies.console_error_panic_hook]
+version = "0.1"
+optional = true
