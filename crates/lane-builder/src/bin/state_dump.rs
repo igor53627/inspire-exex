@@ -1,7 +1,7 @@
 //! State dump binary: Extract full Ethereum state from reth MDBX database
 //!
-//! Iterates through PlainAccountState and PlainStorageState tables to create
-//! PIR-ready database files.
+//! Uses mdbx-rs directly to iterate through PlainAccountState and PlainStorageState
+//! tables to create PIR-ready database files.
 //!
 //! Usage:
 //!   cargo run --bin state-dump --features state-dump -- \
@@ -11,22 +11,16 @@
 
 #![cfg(feature = "state-dump")]
 
+use std::ffi::CString;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::ptr;
 
-use alloy_primitives::U256;
 use clap::Parser;
 use eyre::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use reth_db::{
-    cursor::DbCursorRO,
-    mdbx::DatabaseArguments,
-    open_db_read_only,
-    tables,
-    transaction::DbTx,
-    ClientVersion, Database,
-};
+use mdbx_rs::{*, MDBX_cursor_op::*};
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -80,21 +74,63 @@ fn main() -> Result<()> {
         db_path = %args.db_path.display(),
         output_dir = %args.output_dir.display(),
         chain = %args.chain,
-        "Starting state dump"
+        "Starting state dump with mdbx-rs"
     );
-
-    let db = open_database_read_only(&args.db_path)?;
-    let tx = db.tx()?;
 
     let mut num_accounts = 0u64;
     let mut num_storage_slots = 0u64;
 
-    if !args.storage_only {
-        num_accounts = dump_accounts(&tx, &args.output_dir, args.progress_interval)?;
-    }
+    unsafe {
+        let mut env: *mut MDBX_env = ptr::null_mut();
+        let rc = mdbx_env_create(&mut env);
+        if rc != MDBX_SUCCESS {
+            return Err(eyre::eyre!("Failed to create MDBX environment: {}", rc));
+        }
 
-    if !args.accounts_only {
-        num_storage_slots = dump_storage(&tx, &args.output_dir, args.progress_interval)?;
+        let db_path_str = args.db_path.to_string_lossy();
+        let path_cstr = CString::new(db_path_str.as_ref())?;
+
+        tracing::info!("Opening MDBX database at {}", db_path_str);
+
+        let rc = mdbx_env_open(env, path_cstr.as_ptr(), MDBX_RDONLY as u32, 0o644);
+        if rc != MDBX_SUCCESS {
+            mdbx_env_close(env);
+            return Err(eyre::eyre!("Failed to open MDBX environment: {}", rc));
+        }
+
+        tracing::info!("MDBX environment opened successfully");
+
+        let mut txn: *mut MDBX_txn = ptr::null_mut();
+        let rc = mdbx_txn_begin(env, ptr::null_mut(), MDBX_RDONLY as u32, &mut txn);
+        if rc != MDBX_SUCCESS {
+            mdbx_env_close(env);
+            return Err(eyre::eyre!("Failed to begin transaction: {}", rc));
+        }
+
+        tracing::info!("Read-only transaction started");
+
+        if !args.storage_only {
+            num_accounts = dump_table(
+                txn,
+                "PlainAccountState",
+                &args.output_dir.join("accounts.bin"),
+                args.progress_interval,
+                false,
+            )?;
+        }
+
+        if !args.accounts_only {
+            num_storage_slots = dump_table(
+                txn,
+                "PlainStorageState",
+                &args.output_dir.join("storage.bin"),
+                args.progress_interval,
+                true,
+            )?;
+        }
+
+        mdbx_txn_abort(txn);
+        mdbx_env_close(env);
     }
 
     let metadata = DumpMetadata {
@@ -119,18 +155,30 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn open_database_read_only(path: &PathBuf) -> Result<impl Database> {
-    tracing::info!(path = %path.display(), "Opening MDBX database read-only");
-    let args = DatabaseArguments::new(ClientVersion::default());
-    let db = open_db_read_only(path, args)?;
-    Ok(db)
-}
+unsafe fn dump_table(
+    txn: *mut MDBX_txn,
+    table_name: &str,
+    output_path: &PathBuf,
+    progress_interval: u64,
+    is_storage: bool,
+) -> Result<u64> {
+    let table_cstr = CString::new(table_name)?;
 
-fn dump_accounts<T: DbTx>(tx: &T, output_dir: &PathBuf, progress_interval: u64) -> Result<u64> {
-    let accounts_path = output_dir.join("accounts.bin");
-    let mut writer = BufWriter::new(File::create(&accounts_path)?);
+    let mut dbi: MDBX_dbi = 0;
+    let rc = mdbx_dbi_open(txn, table_cstr.as_ptr(), 0, &mut dbi);
+    if rc != MDBX_SUCCESS {
+        return Err(eyre::eyre!("Failed to open table {}: {}", table_name, rc));
+    }
 
-    tracing::info!(path = %accounts_path.display(), "Dumping accounts");
+    tracing::info!(table = table_name, path = %output_path.display(), "Dumping table");
+
+    let mut cursor: *mut MDBX_cursor = ptr::null_mut();
+    let rc = mdbx_cursor_open(txn, dbi, &mut cursor);
+    if rc != MDBX_SUCCESS {
+        return Err(eyre::eyre!("Failed to open cursor: {}", rc));
+    }
+
+    let mut writer = BufWriter::with_capacity(64 * 1024 * 1024, File::create(output_path)?);
 
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -139,93 +187,50 @@ fn dump_accounts<T: DbTx>(tx: &T, output_dir: &PathBuf, progress_interval: u64) 
             .unwrap(),
     );
 
-    let mut cursor = tx.cursor_read::<tables::PlainAccountState>()?;
+    let mut key = MDBX_val::default();
+    let mut val = MDBX_val::default();
     let mut count = 0u64;
 
-    while let Some((address, account)) = cursor.next()? {
-        let mut record = [0u8; 92];
+    let mut rc = mdbx_cursor_get(cursor, &mut key, &mut val, MDBX_FIRST as MDBX_cursor_op);
 
-        record[0..20].copy_from_slice(address.as_slice());
-        record[20..28].copy_from_slice(&account.nonce.to_be_bytes());
-        record[28..60].copy_from_slice(&u256_to_be_bytes(account.balance));
-        record[60..92].copy_from_slice(
-            account
-                .bytecode_hash
-                .unwrap_or_default()
-                .as_slice(),
-        );
+    while rc == MDBX_SUCCESS {
+        let key_bytes = std::slice::from_raw_parts(key.iov_base as *const u8, key.iov_len);
+        let val_bytes = std::slice::from_raw_parts(val.iov_base as *const u8, val.iov_len);
 
-        writer.write_all(&record)?;
+        if is_storage {
+            writer.write_all(key_bytes)?;
+            writer.write_all(val_bytes)?;
+        } else {
+            writer.write_all(key_bytes)?;
+            writer.write_all(val_bytes)?;
+        }
+
         count += 1;
 
         if count % progress_interval == 0 {
-            pb.set_message(format!("Accounts: {}", count));
+            pb.set_message(format!("{}: {} entries", table_name, count));
             writer.flush()?;
         }
+
+        rc = mdbx_cursor_get(cursor, &mut key, &mut val, MDBX_NEXT as MDBX_cursor_op);
+    }
+
+    if rc != MDBX_NOTFOUND {
+        mdbx_cursor_close(cursor);
+        return Err(eyre::eyre!("Cursor error: {}", rc));
     }
 
     writer.flush()?;
-    pb.finish_with_message(format!("Accounts complete: {}", count));
+    mdbx_cursor_close(cursor);
 
-    tracing::info!(count, path = %accounts_path.display(), "Account dump complete");
-    Ok(count)
-}
-
-fn dump_storage<T: DbTx>(tx: &T, output_dir: &PathBuf, progress_interval: u64) -> Result<u64> {
-    let values_path = output_dir.join("storage_values.bin");
-    let manifest_path = output_dir.join("storage_manifest.bin");
-
-    let mut values_writer = BufWriter::with_capacity(64 * 1024 * 1024, File::create(&values_path)?);
-    let mut manifest_writer =
-        BufWriter::with_capacity(64 * 1024 * 1024, File::create(&manifest_path)?);
+    pb.finish_with_message(format!("{}: {} entries complete", table_name, count));
 
     tracing::info!(
-        values = %values_path.display(),
-        manifest = %manifest_path.display(),
-        "Dumping storage slots"
-    );
-
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .template("[{elapsed_precise}] {spinner} {msg}")
-            .unwrap(),
-    );
-
-    let mut cursor = tx.cursor_read::<tables::PlainStorageState>()?;
-    let mut count = 0u64;
-
-    while let Some((address, storage_entry)) = cursor.next()? {
-        let value_bytes = u256_to_be_bytes(storage_entry.value);
-        values_writer.write_all(&value_bytes)?;
-
-        let mut manifest_record = [0u8; 52];
-        manifest_record[0..20].copy_from_slice(address.as_slice());
-        manifest_record[20..52].copy_from_slice(storage_entry.key.as_slice());
-        manifest_writer.write_all(&manifest_record)?;
-
-        count += 1;
-
-        if count % progress_interval == 0 {
-            pb.set_message(format!("Storage slots: {}", count));
-            values_writer.flush()?;
-            manifest_writer.flush()?;
-        }
-    }
-
-    values_writer.flush()?;
-    manifest_writer.flush()?;
-    pb.finish_with_message(format!("Storage complete: {}", count));
-
-    tracing::info!(
+        table = table_name,
         count,
-        values = %values_path.display(),
-        manifest = %manifest_path.display(),
-        "Storage dump complete"
+        path = %output_path.display(),
+        "Table dump complete"
     );
-    Ok(count)
-}
 
-fn u256_to_be_bytes(value: U256) -> [u8; 32] {
-    value.to_be_bytes::<32>()
+    Ok(count)
 }
