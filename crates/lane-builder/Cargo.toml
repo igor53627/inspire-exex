@@ -14,6 +14,8 @@ exex = ["dep:reth-ethereum", "dep:reth-tracing", "dep:eyre", "dep:futures", "dep
 backfill = ["dep:alloy-provider", "dep:alloy-rpc-types", "dep:alloy-primitives", "dep:alloy-transport", "dep:futures", "dep:clap", "dep:indicatif"]
 # Enable balance extraction for ETH/USDC hot lane
 balance = ["dep:alloy-provider", "dep:alloy-rpc-types", "dep:alloy-primitives", "dep:alloy-transport", "dep:futures", "dep:clap", "dep:indicatif"]
+# Enable full state dump from reth MDBX database
+state-dump = ["dep:reth-db", "dep:reth-codecs", "dep:alloy-primitives", "dep:eyre", "dep:clap", "dep:indicatif", "dep:color-eyre"]
 
 [[bin]]
 name = "lane-builder"
@@ -33,6 +35,11 @@ required-features = ["backfill"]
 name = "balance-builder"
 path = "src/bin/balance.rs"
 required-features = ["balance"]
+
+[[bin]]
+name = "state-dump"
+path = "src/bin/state_dump.rs"
+required-features = ["state-dump"]
 
 [dependencies]
 inspire-core = { path = "../inspire-core" }
@@ -60,6 +67,11 @@ alloy-rpc-types = { workspace = true, optional = true }
 alloy-primitives = { workspace = true, optional = true }
 alloy-transport = { workspace = true, optional = true }
 indicatif = { workspace = true, optional = true }
+
+# Reth DB for direct state dump
+reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+reth-codecs = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3", optional = true }
+color-eyre = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
