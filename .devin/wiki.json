@@ -1,0 +1,118 @@
+{
+  "project": {
+    "name": "inspire-exex",
+    "description": "Two-Lane InsPIRe PIR for private Ethereum state queries",
+    "repository": "https://github.com/igor53627/inspire-exex",
+    "language": "Rust",
+    "framework": "axum"
+  },
+  "architecture": {
+    "overview": "Split-lane PIR server with hot (popular contracts) and cold (everything else) lanes for optimized private queries",
+    "key_components": [
+      {
+        "name": "inspire-core",
+        "path": "crates/inspire-core",
+        "description": "Shared types: Lane, TwoLaneConfig, Manifest, PIR params versioning"
+      },
+      {
+        "name": "inspire-server",
+        "path": "crates/inspire-server",
+        "description": "Two-lane PIR server with live updates, Prometheus metrics, admin isolation"
+      },
+      {
+        "name": "inspire-client",
+        "path": "crates/inspire-client",
+        "description": "Native Rust client with lane routing"
+      },
+      {
+        "name": "inspire-client-wasm",
+        "path": "crates/inspire-client-wasm",
+        "description": "Browser WASM client with secure key handling, WebCrypto CSPRNG"
+      },
+      {
+        "name": "lane-builder",
+        "path": "crates/lane-builder",
+        "description": "CRS/DB generation, Reth ExEx for real-time updates, gas backfill"
+      },
+      {
+        "name": "burner-wallet",
+        "path": "crates/burner-wallet",
+        "description": "Demo wallet UI with PIR balance queries and EIP-7702 signing"
+      }
+    ]
+  },
+  "commands": {
+    "build": "cargo build --release",
+    "test": "cargo test --workspace",
+    "run_server": "cargo run -p inspire-server -- config.json 3000 3001",
+    "build_wasm": "cd crates/inspire-client-wasm && wasm-pack build --target web",
+    "run_wallet": "cd crates/burner-wallet && cargo run"
+  },
+  "dependencies": {
+    "external": [
+      {
+        "name": "inspire-pir",
+        "repository": "https://github.com/igor53627/inspire-rs",
+        "local_path": "../inspire",
+        "description": "Base InsPIRe PIR implementation with InspiRING 2-matrix packing"
+      }
+    ],
+    "key_crates": [
+      "axum",
+      "tokio",
+      "arc-swap",
+      "metrics",
+      "metrics-exporter-prometheus",
+      "wasm-bindgen",
+      "zeroize"
+    ]
+  },
+  "api_endpoints": {
+    "public": [
+      {"path": "/health", "method": "GET", "description": "Readiness check (503 if lanes not loaded)"},
+      {"path": "/live", "method": "GET", "description": "Liveness check (always 200)"},
+      {"path": "/info", "method": "GET", "description": "Server info including PIR params version"},
+      {"path": "/metrics", "method": "GET", "description": "Prometheus metrics (privacy-safe labels)"},
+      {"path": "/crs/{lane}", "method": "GET", "description": "Get CRS for hot/cold lane"},
+      {"path": "/query/{lane}", "method": "POST", "description": "PIR query (full ciphertext)"},
+      {"path": "/query/{lane}/seeded", "method": "POST", "description": "PIR query (seeded, 50% smaller)"},
+      {"path": "/query/{lane}/binary", "method": "POST", "description": "PIR query with binary response"}
+    ],
+    "admin": [
+      {"path": "/admin/reload", "method": "POST", "description": "Hot-reload lane databases"},
+      {"path": "/admin/health", "method": "GET", "description": "Admin health check"}
+    ]
+  },
+  "security": {
+    "pir_privacy": "Query content encrypted with RLWE, server learns lane but not target index",
+    "admin_isolation": "Admin endpoints on separate 127.0.0.1 listener with 1 req/sec rate limit",
+    "wasm_security": "SecureSecretKey zeroizes memory on drop, WebCrypto CSPRNG validated on init",
+    "version_checks": "PIR params versioned to prevent crypto mismatches",
+    "metrics_privacy": "Prometheus metrics avoid including query contents or addresses in labels"
+  },
+  "metrics": {
+    "pir_requests_total": "Counter by lane and outcome",
+    "pir_request_duration_seconds": "Histogram by lane and outcome",
+    "pir_lane_loaded": "Gauge (1 if loaded)",
+    "pir_lane_block_number": "Gauge with snapshot block",
+    "pir_lane_mmap_mode": "Gauge: 1 if mmap-backed, 0 if in-memory",
+    "pir_reload_total": "Counter of reload operations",
+    "pir_reload_duration_seconds": "Histogram of reload times"
+  },
+  "configuration": {
+    "file": "config.json",
+    "key_options": [
+      "hot_lane_shards: path to hot lane shard files",
+      "cold_lane_shards: path to cold lane shard files",
+      "hot_lane_crs: path to hot lane CRS file (metadata from crs.meta.json)",
+      "cold_lane_crs: path to cold lane CRS file",
+      "use_mmap: boolean for memory-mapped database mode",
+      "version: server version string"
+    ]
+  },
+  "related_issues": {
+    "production_readiness": "#38 (parent)",
+    "completed": ["#39 CRS versioning", "#40 Admin isolation", "#41 WASM security", "#43 Observability"],
+    "remaining": ["#42 Snapshot freshness", "#44 Testing infrastructure"]
+  }
+}

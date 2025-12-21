@@ -209,14 +209,65 @@ curl -X POST http://localhost:3000/admin/reload
 
 See [docs/LIVE_UPDATES.md](docs/LIVE_UPDATES.md) for details.
 
+## Production Readiness
+
+### Observability
+
+```bash
+# Prometheus metrics
+curl http://localhost:3000/metrics
+
+# Readiness (503 if lanes not loaded)
+curl http://localhost:3000/health
+
+# Liveness (always 200)
+curl http://localhost:3000/live
+```
+
+Metrics include:
+- `pir_requests_total` / `pir_request_duration_seconds` - by lane and outcome
+- `pir_lane_loaded` / `pir_lane_block_number` / `pir_lane_mmap_mode` - lane status
+- `pir_reload_total` / `pir_reload_duration_seconds` - reload operations
+
+All metrics are privacy-safe: labels include only lane and outcome, never query contents.
+
+### Admin Isolation
+
+Run admin endpoints on a separate localhost-only listener:
+
+```bash
+# Public on 0.0.0.0:3000, admin on 127.0.0.1:3001
+inspire-server config.json 3000 3001
+```
+
+When an admin port is configured:
+- Admin endpoints (`/admin/reload`, `/admin/health`) bind only to `127.0.0.1:<admin_port>`
+- They are removed from the public listener
+- Requests are rate-limited to 1 req/sec (HTTP 429 on excess)
+
+### WASM Client Security
+
+- `SecureSecretKey` wrapper zeroizes RLWE secret key material on drop (via `zeroize`)
+- Browser client validates WebCrypto CSPRNG availability on init
+- Fails fast with `CryptoUnavailable` error if secure randomness unavailable
+
+### Version Compatibility
+
+PIR parameters are versioned to prevent cryptographic mismatches:
+- Server validates CRS metadata on startup
+- WASM client checks version on init
+- `/info` endpoint returns `pir_params_version`
+
 ## Crates
 
 | Crate | Description |
 |-------|-------------|
-| `inspire-core` | Shared types (Lane, Config, Manifest) |
-| `inspire-server` | Two-lane PIR server with live updates |
-| `inspire-client` | Client with lane routing |
+| `inspire-core` | Shared types (Lane, Config, Manifest, PIR params) |
+| `inspire-server` | Two-lane PIR server with live updates, metrics |
+| `inspire-client` | Native client with lane routing |
+| `inspire-client-wasm` | Browser WASM client with secure key handling |
 | `lane-builder` | Hot lane extractor (Reth ExEx) |
+| `burner-wallet` | Demo wallet UI with PIR + EIP-7702 |
 
 ## Integration with inspire-rs
 
