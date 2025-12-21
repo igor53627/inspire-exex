@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Burner Wallet{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #0f0f1a;
+            --bg-card: #1a1a2e;
+            --accent: #7f5af0;
+            --accent-hover: #6b4ed8;
+            --text: #e0e0e0;
+            --text-muted: #888;
+            --success: #2ecc71;
+            --error: #e74c3c;
+            --warn: #f39c12;
+            --border: #2a2a40;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        .card h3 { margin-top: 0; margin-bottom: 15px; font-size: 16px; }
+        label { display: block; margin: 10px 0 5px; font-size: 14px; color: var(--text-muted); }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+        }
+        input:focus, select:focus { outline: 1px solid var(--accent); }
+        button {
+            padding: 12px 24px;
+            border-radius: 6px;
+            border: none;
+            background: var(--accent);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--accent-hover); }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-success { background: var(--success); color: #000; }
+        .status-error { background: var(--error); }
+        .status-pending { background: var(--warn); color: #000; }
+        .status-idle { background: #444; }
+        .mono { font-family: 'SF Mono', Monaco, monospace; font-size: 13px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
+        .balance-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .balance-row:last-child { border-bottom: none; }
+        .balance-value { font-family: monospace; font-size: 20px; }
+        .log-box {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .log-info { color: #3498db; }
+        .log-success { color: var(--success); }
+        .log-error { color: var(--error); }
+        .privacy-compare {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .privacy-bad {
+            background: #1a0a0a;
+            border: 1px solid var(--error);
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .privacy-good {
+            background: #0a1a0a;
+            border: 1px solid var(--success);
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .privacy-bad h4 { color: var(--error); margin-bottom: 8px; font-size: 14px; }
+        .privacy-good h4 { color: var(--success); margin-bottom: 8px; font-size: 14px; }
+        .privacy-example { font-size: 11px; color: var(--text-muted); }
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+        .btn-secondary:hover { background: rgba(127, 90, 240, 0.1); }
+        .subtitle { color: var(--text-muted); margin-bottom: 20px; font-size: 14px; }
+        .header { margin-bottom: 30px; }
+        .header h1 { margin-bottom: 5px; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .mt-10 { margin-top: 10px; }
+        .mb-10 { margin-bottom: 10px; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

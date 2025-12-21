@@ -1,0 +1,18 @@
+{
+  "name": "burner-wallet-e2e",
+  "private": true,
+  "scripts": {
+    "prepare-helios": "rm -rf static/helios && mkdir -p static/helios && cp node_modules/@a16z/helios/dist/lib.mjs static/helios/",
+    "postinstall": "npm run prepare-helios",
+    "pretest": "npm run prepare-helios",
+    "test": "playwright test",
+    "test:headed": "npm run prepare-helios && playwright test --headed",
+    "test:debug": "npm run prepare-helios && playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  },
+  "dependencies": {
+    "@a16z/helios": "0.10.2"
+  }
+}

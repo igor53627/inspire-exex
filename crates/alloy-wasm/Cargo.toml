@@ -1,0 +1,27 @@
+[package]
+name = "alloy-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Alloy-rs compiled to WASM for browser wallet operations"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+alloy-primitives = "1"
+alloy-sol-types = "1"
+alloy-signer = "1"
+alloy-signer-local = "1"
+alloy-eips = "1"
+alloy-consensus = "1"
+alloy-rlp = "0.3"
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# WASM support for randomness
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_0_2 = { package = "getrandom", version = "0.2", features = ["js"] }
+console_error_panic_hook = "0.1"

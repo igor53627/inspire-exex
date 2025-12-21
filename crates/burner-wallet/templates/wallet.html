@@ -1,0 +1,903 @@
+{% extends "base.html" %}
+
+{% block title %}Burner Wallet - PIR + EIP-7702{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Burner Wallet</h1>
+    <p class="subtitle">Private balance queries via PIR | EIP-7702 batch transactions | Helios verification</p>
+</div>
+
+<!-- Wallet Card -->
+<div class="card">
+    <div class="flex-between mb-10">
+        <h3>Wallet</h3>
+        <span id="walletStatus" class="status status-idle">No wallet</span>
+    </div>
+    <div id="walletEmpty">
+        <p style="color: var(--text-muted); margin-bottom: 15px;">Generate a burner wallet or import an existing private key.</p>
+        <button id="generateBtn" onclick="generateWallet()">Generate New Wallet</button>
+        <button class="btn-secondary" onclick="toggleImport()" style="margin-left: 10px;">Import Key</button>
+        <div id="importSection" style="display: none; margin-top: 15px;">
+            <input type="password" id="importKey" placeholder="Private key (0x...)">
+            <button onclick="importWallet()" style="margin-top: 10px;">Import</button>
+        </div>
+    </div>
+    <div id="walletActive" style="display: none;">
+        <div class="balance-row">
+            <span>Address</span>
+            <span class="mono" id="walletAddress">--</span>
+        </div>
+        <div class="balance-row">
+            <span>ETH Balance</span>
+            <span class="balance-value" id="ethBalance">--</span>
+        </div>
+        <div class="balance-row">
+            <span>USDC Balance</span>
+            <span class="balance-value" id="usdcBalance">--</span>
+        </div>
+        <div style="margin-top: 15px; font-size: 12px; color: var(--text-muted);">
+            Snapshot: <span id="snapshotBlock">--</span> | 
+            Verified: <span id="snapshotVerified">--</span>
+        </div>
+        <div style="margin-top: 15px;">
+            <button onclick="queryBalance()">Refresh Balance</button>
+            <button onclick="fundFromTest()" style="margin-left: 10px;">Fund from Test Account</button>
+            <button class="btn-secondary" onclick="clearWallet()" style="margin-left: 10px;">Clear Wallet</button>
+        </div>
+        <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px;">
+            Test account (pre-funded): <span class="mono" style="font-size: 10px;">0xa158f725512b2f4365bEfc29e144A1f2f48f746f</span>
+        </p>
+    </div>
+</div>
+
+<!-- RPC Configuration -->
+<div class="card">
+    <div class="flex-between mb-10">
+        <h3>RPC Configuration</h3>
+        <span id="rpcStatus" class="status status-idle">Not connected</span>
+    </div>
+    <div class="grid-2">
+        <div>
+            <label>Execution RPC (Tenderly Fork)</label>
+            <input type="text" id="executionRpc" value="https://virtual.sepolia.eu.rpc.tenderly.co/1732ab6a-5418-4eb0-acee-3654f6dc79e7">
+        </div>
+        <div>
+            <label>Consensus RPC (for Helios)</label>
+            <input type="text" id="consensusRpc" value="https://lodestar-sepolia.chainsafe.io">
+        </div>
+    </div>
+    <p style="font-size: 12px; color: var(--text-muted); margin-top: 10px;">
+        Using Tenderly Virtual TestNet fork of Sepolia. Test accounts pre-funded with ETH/USDC.
+    </p>
+    <div style="margin-top: 15px;">
+        <button id="connectBtn" onclick="connectRpc()">Connect RPC</button>
+        <button id="connectPirBtn" onclick="connectPir()" style="margin-left: 10px;">Connect PIR</button>
+        <button id="syncBtn" onclick="initHelios()" style="margin-left: 10px;">Sync Helios</button>
+        <button id="verifyBtn" onclick="verifySnapshot()" disabled style="margin-left: 10px;">Verify Snapshot</button>
+    </div>
+    <div id="rpcInfo" style="margin-top: 15px; font-size: 13px; color: var(--text-muted);">
+        Current block: <span id="currentBlock">--</span> | 
+        Chain ID: <span id="chainId">--</span> |
+        PIR: <span id="pirStatus">Not connected</span>
+    </div>
+</div>
+
+<!-- EIP-7702 Authorization -->
+<div class="card">
+    <h3>EIP-7702 Authorization</h3>
+    <p style="color: var(--text-muted); margin-bottom: 15px; font-size: 13px;">
+        Delegate your EOA to a smart contract for batch transactions.
+    </p>
+    <div class="grid-2">
+        <div>
+            <label>Delegate Contract</label>
+            <input type="text" id="delegateContract" placeholder="0x..." value="0x63c0c19a282a1b52b07dd5a65b58948a07dae32b">
+        </div>
+        <div>
+            <label>Nonce</label>
+            <input type="number" id="authNonce" value="0">
+        </div>
+    </div>
+    <div style="margin-top: 15px;">
+        <button id="signAuthBtn" onclick="signAuthorization()" disabled>Sign Authorization</button>
+    </div>
+    <div id="authResult" style="display: none; margin-top: 15px;">
+        <label>Signed Authorization (RLP)</label>
+        <div class="log-box mono" id="authRlp" style="max-height: 100px;"></div>
+    </div>
+</div>
+
+<!-- Send Transaction -->
+<div class="card">
+    <h3>Send Transaction (EIP-7702)</h3>
+    <p style="color: var(--text-muted); margin-bottom: 15px; font-size: 13px;">
+        Send an EIP-7702 transaction with signed authorization. The authorization delegates your EOA to the contract above.
+    </p>
+    <div class="grid-2">
+        <div>
+            <label>To Address</label>
+            <input type="text" id="txTo" placeholder="0x...">
+        </div>
+        <div>
+            <label>Value (ETH)</label>
+            <input type="text" id="txValue" placeholder="0.0" value="0">
+        </div>
+    </div>
+    <div style="margin-top: 10px;">
+        <label>Data (hex, optional)</label>
+        <input type="text" id="txData" placeholder="0x..." value="0x">
+    </div>
+    <div class="grid-2" style="margin-top: 10px;">
+        <div>
+            <label>Gas Limit</label>
+            <input type="number" id="txGasLimit" value="100000">
+        </div>
+        <div>
+            <label>Include Authorization</label>
+            <select id="txIncludeAuth">
+                <option value="yes">Yes - delegate EOA first</option>
+                <option value="no">No - already delegated</option>
+            </select>
+        </div>
+    </div>
+    <div style="margin-top: 15px;">
+        <button id="sendTxBtn" onclick="sendTransaction()" disabled>Send Transaction</button>
+    </div>
+    <div id="txResult" style="display: none; margin-top: 15px;">
+        <label>Transaction Hash</label>
+        <div class="log-box mono" id="txHash" style="max-height: 60px;"></div>
+    </div>
+</div>
+
+<!-- Server View (Privacy Demo) -->
+<div class="card">
+    <h3>Server View (What PIR Server Sees)</h3>
+    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">
+        This shows what an honest-but-curious server observes. The server cannot determine which address you queried.
+    </p>
+    <div class="privacy-compare">
+        <div class="privacy-bad">
+            <h4>[X] Standard RPC</h4>
+            <div class="privacy-example">
+                eth_getBalance(0xd8dA6BF...)<br>
+                <span style="color: var(--error);">Server sees: exact address</span>
+            </div>
+        </div>
+        <div class="privacy-good">
+            <h4>[OK] PIR Query</h4>
+            <div class="privacy-example">
+                POST /query [RLWE ciphertext]<br>
+                <span style="color: var(--success);">Server sees: encrypted noise</span>
+            </div>
+        </div>
+    </div>
+    <div id="serverLog" class="log-box"></div>
+</div>
+
+<!-- Client Log -->
+<div class="card">
+    <h3>Client Log</h3>
+    <div id="log" class="log-box"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+const PIR_SERVER = '{{ pir_server_url }}';
+const NETWORK = '{{ network }}';
+const CHAIN_ID = NETWORK === 'sepolia' ? 11155111 : 1;
+
+// Sepolia USDC contract
+const USDC_CONTRACT = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+
+// Pre-funded test account on Tenderly fork
+const TEST_ACCOUNT = '0xa158f725512b2f4365bEfc29e144A1f2f48f746f';
+
+// Tenderly Admin RPC (for setBalance)
+const TENDERLY_ADMIN_RPC = 'https://virtual.sepolia.eu.rpc.tenderly.co/c23939d1-28a6-445a-82b5-557919858e40';
+
+let alloyWasm = null;
+let pirWasm = null;
+let pirClient = null;
+let heliosProvider = null;
+let pirMetadata = null;
+let walletKey = null;
+let snapshotVerified = false;
+let rpcUrl = null;
+let signedAuth = null;
+let pirEnabled = false;
+
+function log(msg, type = 'info') {
+    const el = document.getElementById('log');
+    const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+    el.innerHTML += `<span class="log-${type}">[${ts}] ${msg}</span>\n`;
+    el.scrollTop = el.scrollHeight;
+}
+
+function serverLog(entry) {
+    const el = document.getElementById('serverLog');
+    const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+    el.innerHTML += `<div style="border-bottom: 1px solid var(--border); padding: 8px 0;">
+        <div style="color: var(--warn);">[${ts}] ${entry.method} ${entry.endpoint}</div>
+        <div style="color: var(--text-muted); margin-top: 4px; font-size: 11px;">
+            Client IP: ${entry.clientIp}<br>
+            Request size: ${entry.requestSize}
+            ${entry.queryData ? `<br><span style="color: var(--error);">Query: ${entry.queryData}</span>` : ''}
+            ${entry.note ? `<br><span style="color: var(--success);">${entry.note}</span>` : ''}
+        </div>
+    </div>`;
+    el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(id, status, text) {
+    const el = document.getElementById(id);
+    el.className = `status status-${status}`;
+    el.textContent = text;
+}
+
+async function loadWasm() {
+    if (alloyWasm) return alloyWasm;
+    try {
+        log('Loading alloy-wasm...', 'info');
+        const wasm = await import('/pkg/alloy_wasm.js');
+        await wasm.default();
+        alloyWasm = wasm;
+        log('alloy-wasm loaded', 'success');
+        return wasm;
+    } catch (e) {
+        log(`Failed to load alloy-wasm: ${e.message}`, 'error');
+        throw e;
+    }
+}
+
+async function loadPirWasm() {
+    if (pirWasm) return pirWasm;
+    try {
+        log('Loading inspire-client-wasm...', 'info');
+        const wasm = await import('/pir-pkg/inspire_client_wasm.js');
+        await wasm.default();
+        wasm.init();
+        pirWasm = wasm;
+        log('inspire-client-wasm loaded', 'success');
+        return wasm;
+    } catch (e) {
+        log(`Failed to load PIR WASM: ${e.message}`, 'error');
+        throw e;
+    }
+}
+
+async function initPirClient() {
+    if (pirClient) return pirClient;
+    try {
+        const wasm = await loadPirWasm();
+        log(`Connecting to PIR server: ${PIR_SERVER}`, 'info');
+        
+        pirClient = new wasm.PirClient(PIR_SERVER);
+        await pirClient.init('balances');
+        
+        const entryCount = pirClient.entry_count();
+        log(`PIR client initialized: ${entryCount} entries in hot lane`, 'success');
+        pirEnabled = true;
+        
+        const metaRes = await fetch(`${PIR_SERVER}/metadata/balances`);
+        if (metaRes.ok) {
+            pirMetadata = await metaRes.json();
+            document.getElementById('snapshotBlock').textContent = pirMetadata.snapshotBlock;
+            log(`Snapshot block: ${pirMetadata.snapshotBlock}`, 'info');
+        }
+        
+        return pirClient;
+    } catch (e) {
+        log(`PIR init failed: ${e.message}`, 'error');
+        pirEnabled = false;
+        throw e;
+    }
+}
+
+function bytesToBigInt(bytes) {
+    let result = 0n;
+    for (const byte of bytes) {
+        result = (result << 8n) | BigInt(byte);
+    }
+    return result;
+}
+
+function loadStoredWallet() {
+    const stored = localStorage.getItem('burner_wallet_key');
+    if (stored) {
+        walletKey = stored;
+        showWallet();
+    }
+}
+
+async function showWallet() {
+    const wasm = await loadWasm();
+    const address = wasm.get_address(walletKey);
+    document.getElementById('walletAddress').textContent = address;
+    document.getElementById('walletEmpty').style.display = 'none';
+    document.getElementById('walletActive').style.display = 'block';
+    document.getElementById('signAuthBtn').disabled = false;
+    setStatus('walletStatus', 'success', 'Active');
+    log(`Wallet loaded: ${address.slice(0, 10)}...`, 'success');
+}
+
+window.generateWallet = async function() {
+    const wasm = await loadWasm();
+    const walletJson = wasm.generate_wallet();
+    const wallet = JSON.parse(walletJson);
+    walletKey = wallet.private_key;
+    localStorage.setItem('burner_wallet_key', walletKey);
+    await showWallet();
+    log('New burner wallet generated', 'success');
+};
+
+window.importWallet = async function() {
+    const key = document.getElementById('importKey').value.trim();
+    if (!key) return;
+    try {
+        const wasm = await loadWasm();
+        wasm.get_address(key);
+        walletKey = key;
+        localStorage.setItem('burner_wallet_key', walletKey);
+        await showWallet();
+        document.getElementById('importSection').style.display = 'none';
+        log('Wallet imported', 'success');
+    } catch (e) {
+        log(`Invalid private key: ${e.message}`, 'error');
+    }
+};
+
+window.toggleImport = function() {
+    const el = document.getElementById('importSection');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+window.clearWallet = function() {
+    localStorage.removeItem('burner_wallet_key');
+    walletKey = null;
+    document.getElementById('walletEmpty').style.display = 'block';
+    document.getElementById('walletActive').style.display = 'none';
+    document.getElementById('signAuthBtn').disabled = true;
+    setStatus('walletStatus', 'idle', 'No wallet');
+    log('Wallet cleared', 'info');
+};
+
+window.fundFromTest = async function() {
+    if (!walletKey) {
+        log('No wallet loaded', 'error');
+        return;
+    }
+    
+    const wasm = await loadWasm();
+    const address = wasm.get_address(walletKey);
+    
+    log(`Funding ${address.slice(0, 10)}... with test ETH/USDC`, 'info');
+    
+    try {
+        // Use Tenderly admin RPC to set ETH balance (10 ETH)
+        const ethRes = await fetch(TENDERLY_ADMIN_RPC, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'tenderly_setBalance',
+                params: [address, '0x8AC7230489E80000'], // 10 ETH in wei
+                id: 1
+            })
+        });
+        const ethData = await ethRes.json();
+        if (ethData.error) throw new Error(ethData.error.message);
+        log('Funded 10 ETH', 'success');
+        
+        // Set USDC balance (1000 USDC)
+        // Calculate storage slot: keccak256(abi.encode(address, 9))
+        const paddedAddr = address.toLowerCase().slice(2).padStart(64, '0');
+        const paddedSlot = '0000000000000000000000000000000000000000000000000000000000000009';
+        const concat = paddedAddr + paddedSlot;
+        
+        // Use keccak256 from wasm
+        const slotBytes = wasm.keccak256(hexToBytes(concat));
+        const slot = '0x' + Array.from(slotBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        const usdcRes = await fetch(TENDERLY_ADMIN_RPC, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'tenderly_setStorageAt',
+                params: [USDC_CONTRACT, slot, '0x000000000000000000000000000000000000000000000000000000003B9ACA00'], // 1000 USDC
+                id: 2
+            })
+        });
+        const usdcData = await usdcRes.json();
+        if (usdcData.error) throw new Error(usdcData.error.message);
+        log('Funded 1000 USDC', 'success');
+        
+        // Refresh balances
+        if (rpcUrl) {
+            await fetchRpcBalances();
+        }
+        
+    } catch (e) {
+        log(`Funding error: ${e.message}`, 'error');
+    }
+};
+
+function hexToBytes(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+}
+
+window.connectRpc = async function() {
+    rpcUrl = document.getElementById('executionRpc').value;
+    setStatus('rpcStatus', 'pending', 'Connecting...');
+    
+    try {
+        log(`Connecting to RPC: ${rpcUrl.slice(0, 40)}...`, 'info');
+        
+        // Get chain ID
+        const chainRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_chainId', params: [], id: 1 })
+        });
+        const chainData = await chainRes.json();
+        const chainId = parseInt(chainData.result, 16);
+        document.getElementById('chainId').textContent = chainId;
+        
+        // Get block number
+        const blockRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 2 })
+        });
+        const blockData = await blockRes.json();
+        const blockNum = parseInt(blockData.result, 16);
+        document.getElementById('currentBlock').textContent = blockNum.toLocaleString();
+        
+        setStatus('rpcStatus', 'success', 'Connected');
+        log(`Connected! Chain ${chainId}, Block ${blockNum}`, 'success');
+        
+        // Enable send button if authorization is signed
+        if (signedAuth) {
+            document.getElementById('sendTxBtn').disabled = false;
+        }
+        
+        // If wallet loaded, fetch real balances
+        if (walletKey) {
+            await fetchRpcBalances();
+        }
+    } catch (e) {
+        log(`RPC connection error: ${e.message}`, 'error');
+        setStatus('rpcStatus', 'error', 'Failed');
+    }
+};
+
+async function fetchRpcBalances() {
+    if (!rpcUrl || !walletKey) return;
+    
+    const wasm = await loadWasm();
+    const address = wasm.get_address(walletKey);
+    
+    try {
+        // Get ETH balance
+        const ethRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'eth_getBalance',
+                params: [address, 'latest'],
+                id: 1
+            })
+        });
+        const ethData = await ethRes.json();
+        const ethWei = BigInt(ethData.result);
+        const ethFormatted = wasm.format_units(ethWei.toString(), 18);
+        document.getElementById('ethBalance').textContent = `${ethFormatted} ETH`;
+        
+        // Get USDC balance (balanceOf call)
+        const balanceOfData = wasm.encode_balance_of(address);
+        const calldata = '0x' + Array.from(balanceOfData).map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        const usdcRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'eth_call',
+                params: [{ to: USDC_CONTRACT, data: calldata }, 'latest'],
+                id: 2
+            })
+        });
+        const usdcData = await usdcRes.json();
+        const usdcRaw = BigInt(usdcData.result);
+        const usdcFormatted = wasm.format_units(usdcRaw.toString(), 6);
+        document.getElementById('usdcBalance').textContent = `${usdcFormatted} USDC`;
+        
+        log(`Balances: ${ethFormatted} ETH, ${usdcFormatted} USDC`, 'success');
+        
+        serverLog({
+            method: 'POST',
+            endpoint: '/eth_getBalance, /eth_call',
+            clientIp: '192.168.1.x',
+            requestSize: '~200 bytes',
+            queryData: `address: ${address}`,
+            note: ''
+        });
+        
+    } catch (e) {
+        log(`Balance fetch error: ${e.message}`, 'error');
+    }
+}
+
+window.initHelios = async function() {
+    setStatus('heliosStatus', 'pending', 'Syncing...');
+    document.getElementById('syncBtn').disabled = true;
+    
+    try {
+        log('Initializing Helios light client...', 'info');
+        const { createHeliosProvider } = await import('/helios/lib.mjs');
+        
+        const executionRpc = document.getElementById('executionRpc').value;
+        const consensusRpc = document.getElementById('consensusRpc').value;
+        
+        heliosProvider = await createHeliosProvider({
+            executionRpc,
+            consensusRpc,
+            network: NETWORK,
+        }, 'ethereum');
+        
+        log('Waiting for Helios to sync...', 'info');
+        await heliosProvider.waitSynced();
+        
+        const blockNum = await heliosProvider.request({ method: 'eth_blockNumber', params: [] });
+        const block = parseInt(blockNum, 16);
+        document.getElementById('currentBlock').textContent = block.toLocaleString();
+        
+        setStatus('heliosStatus', 'success', 'Synced');
+        document.getElementById('verifyBtn').disabled = false;
+        log(`Helios synced at block ${block}`, 'success');
+    } catch (e) {
+        log(`Helios error: ${e.message}`, 'error');
+        setStatus('heliosStatus', 'error', 'Failed');
+    }
+    
+    document.getElementById('syncBtn').disabled = false;
+};
+
+window.verifySnapshot = async function() {
+    if (!heliosProvider || !pirMetadata) {
+        log('Need Helios synced and PIR metadata', 'error');
+        return;
+    }
+    
+    try {
+        const blockHex = `0x${pirMetadata.snapshotBlock.toString(16)}`;
+        log(`Verifying block ${pirMetadata.snapshotBlock}...`, 'info');
+        
+        const block = await heliosProvider.request({
+            method: 'eth_getBlockByNumber',
+            params: [blockHex, false]
+        });
+        
+        if (!block) throw new Error('Block not found');
+        
+        const expected = pirMetadata.snapshotBlockHash.toLowerCase();
+        const actual = block.hash.toLowerCase();
+        
+        if (expected === actual) {
+            snapshotVerified = true;
+            document.getElementById('snapshotVerified').textContent = 'Yes';
+            document.getElementById('snapshotVerified').style.color = 'var(--success)';
+            log(`[OK] Snapshot verified: ${actual.slice(0, 18)}...`, 'success');
+        } else {
+            snapshotVerified = false;
+            document.getElementById('snapshotVerified').textContent = 'MISMATCH';
+            document.getElementById('snapshotVerified').style.color = 'var(--error)';
+            log(`[FAIL] Hash mismatch!`, 'error');
+        }
+    } catch (e) {
+        log(`Verification error: ${e.message}`, 'error');
+    }
+};
+
+window.queryBalance = async function() {
+    if (!walletKey) {
+        log('No wallet loaded', 'error');
+        return;
+    }
+    
+    // If RPC is connected and PIR not enabled, use direct RPC queries
+    if (rpcUrl && !pirEnabled) {
+        await fetchRpcBalances();
+        return;
+    }
+    
+    const wasm = await loadWasm();
+    const address = wasm.get_address(walletKey);
+    
+    log(`Querying balance for ${address.slice(0, 10)}... (PIR mode)`, 'info');
+    
+    try {
+        if (!pirClient) {
+            await initPirClient();
+        }
+        
+        if (!pirMetadata) {
+            const metaRes = await fetch(`${PIR_SERVER}/metadata/balances`);
+            if (!metaRes.ok) throw new Error(`Metadata fetch failed: ${metaRes.status}`);
+            pirMetadata = await metaRes.json();
+            document.getElementById('snapshotBlock').textContent = pirMetadata.snapshotBlock;
+        }
+        
+        serverLog({
+            method: 'GET',
+            endpoint: '/metadata/balances',
+            clientIp: '192.168.1.x',
+            requestSize: '0 bytes',
+            note: 'Public metadata - no privacy leak'
+        });
+        
+        const idx = pirMetadata.addresses?.findIndex(
+            a => a.toLowerCase() === address.toLowerCase()
+        );
+        
+        if (idx === undefined || idx < 0) {
+            log('Address not in hot lane - falling back to RPC', 'info');
+            if (rpcUrl) {
+                await fetchRpcBalances();
+            } else {
+                document.getElementById('ethBalance').textContent = 'Not in hot lane';
+                document.getElementById('usdcBalance').textContent = '--';
+            }
+            return;
+        }
+        
+        log(`Address found at index ${idx}, sending PIR query...`, 'info');
+        
+        serverLog({
+            method: 'POST',
+            endpoint: '/query/balances/seeded/binary',
+            clientIp: '192.168.1.x',
+            requestSize: '~230 KB',
+            queryData: '[RLWE ciphertext - 2048 polynomials]',
+            note: 'Server cannot determine queried index!'
+        });
+        
+        const result = await pirClient.query_binary(BigInt(idx));
+        
+        if (result.length < 64) {
+            throw new Error(`Invalid balance record size: ${result.length}`);
+        }
+        
+        const ethBytes = result.slice(0, 32);
+        const usdcBytes = result.slice(32, 64);
+        const ethWei = bytesToBigInt(ethBytes);
+        const usdcRaw = bytesToBigInt(usdcBytes);
+        
+        const ethFormatted = wasm.format_units(ethWei.toString(), 18);
+        const usdcFormatted = wasm.format_units(usdcRaw.toString(), 6);
+        
+        document.getElementById('ethBalance').textContent = `${ethFormatted} ETH`;
+        document.getElementById('usdcBalance').textContent = `${usdcFormatted} USDC`;
+        document.getElementById('snapshotVerified').textContent = snapshotVerified ? 'Yes' : 'Pending';
+        
+        log(`PIR Balance: ${ethFormatted} ETH, ${usdcFormatted} USDC (snapshot)`, 'success');
+        
+    } catch (e) {
+        log(`PIR query error: ${e.message}`, 'error');
+        if (rpcUrl) {
+            log('Falling back to RPC...', 'info');
+            await fetchRpcBalances();
+        } else {
+            document.getElementById('ethBalance').textContent = 'Error';
+        }
+    }
+};
+
+window.connectPir = async function() {
+    document.getElementById('pirStatus').textContent = 'Connecting...';
+    document.getElementById('pirStatus').style.color = 'var(--warn)';
+    try {
+        await initPirClient();
+        document.getElementById('pirStatus').textContent = 'Connected';
+        document.getElementById('pirStatus').style.color = 'var(--success)';
+        document.getElementById('verifyBtn').disabled = false;
+    } catch (e) {
+        document.getElementById('pirStatus').textContent = 'Failed';
+        document.getElementById('pirStatus').style.color = 'var(--error)';
+        log(`PIR connection failed: ${e.message}`, 'error');
+    }
+};
+
+window.signAuthorization = async function() {
+    if (!walletKey) {
+        log('No wallet loaded', 'error');
+        return;
+    }
+    
+    const wasm = await loadWasm();
+    const contract = document.getElementById('delegateContract').value;
+    const nonce = parseInt(document.getElementById('authNonce').value) || 0;
+    
+    try {
+        log(`Signing EIP-7702 authorization for ${contract.slice(0, 10)}...`, 'info');
+        
+        const authRequest = JSON.stringify({
+            chain_id: CHAIN_ID,
+            contract_address: contract,
+            nonce: nonce
+        });
+        
+        const signedJson = wasm.sign_authorization(walletKey, authRequest);
+        const signed = JSON.parse(signedJson);
+        
+        signedAuth = signed;
+        
+        document.getElementById('authResult').style.display = 'block';
+        document.getElementById('authRlp').textContent = signed.rlp_encoded;
+        document.getElementById('sendTxBtn').disabled = !rpcUrl;
+        
+        log(`Authorization signed! RLP: ${signed.rlp_encoded.slice(0, 40)}...`, 'success');
+        log(`Y-parity: ${signed.y_parity}, R: ${signed.r.slice(0, 20)}...`, 'info');
+    } catch (e) {
+        log(`Signing error: ${e.message}`, 'error');
+    }
+};
+
+window.sendTransaction = async function() {
+    if (!walletKey) {
+        log('No wallet loaded', 'error');
+        return;
+    }
+    if (!rpcUrl) {
+        log('RPC not connected', 'error');
+        return;
+    }
+    
+    const wasm = await loadWasm();
+    const address = wasm.get_address(walletKey);
+    const toAddress = document.getElementById('txTo').value || address;
+    const valueEth = document.getElementById('txValue').value || '0';
+    const data = document.getElementById('txData').value || '0x';
+    const gasLimit = parseInt(document.getElementById('txGasLimit').value) || 100000;
+    const includeAuth = document.getElementById('txIncludeAuth').value === 'yes';
+    
+    if (includeAuth && !signedAuth) {
+        log('Please sign authorization first', 'error');
+        return;
+    }
+    
+    try {
+        log(`Building EIP-7702 transaction...`, 'info');
+        
+        const nonceRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'eth_getTransactionCount',
+                params: [address, 'latest'],
+                id: 1
+            })
+        });
+        const nonceData = await nonceRes.json();
+        const nonce = parseInt(nonceData.result, 16);
+        
+        const gasPriceRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'eth_gasPrice',
+                params: [],
+                id: 2
+            })
+        });
+        const gasPriceData = await gasPriceRes.json();
+        const gasPrice = BigInt(gasPriceData.result);
+        const maxFee = gasPrice * 2n;
+        const maxPriorityFee = gasPrice / 10n;
+        
+        const valueWei = wasm.parse_units(valueEth, 18);
+        
+        const authList = includeAuth ? [{
+            chain_id: signedAuth.chain_id,
+            address: signedAuth.address,
+            nonce: signedAuth.nonce,
+            y_parity: signedAuth.y_parity,
+            r: signedAuth.r,
+            s: signedAuth.s
+        }] : [];
+        
+        const txRequest = JSON.stringify({
+            chain_id: CHAIN_ID,
+            nonce: nonce,
+            max_priority_fee_per_gas: maxPriorityFee.toString(),
+            max_fee_per_gas: maxFee.toString(),
+            gas_limit: gasLimit,
+            to: toAddress,
+            value: valueWei,
+            data: data,
+            authorization_list: authList
+        });
+        
+        log(`Signing transaction (nonce: ${nonce})...`, 'info');
+        const signedTxJson = wasm.sign_eip7702_tx(walletKey, txRequest);
+        const signedTx = JSON.parse(signedTxJson);
+        
+        log(`Broadcasting transaction...`, 'info');
+        const sendRes = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'eth_sendRawTransaction',
+                params: [signedTx.raw_tx],
+                id: 3
+            })
+        });
+        const sendData = await sendRes.json();
+        
+        if (sendData.error) {
+            throw new Error(sendData.error.message);
+        }
+        
+        const txHash = sendData.result;
+        document.getElementById('txResult').style.display = 'block';
+        document.getElementById('txHash').textContent = txHash;
+        
+        log(`Transaction sent! Hash: ${txHash}`, 'success');
+        
+        log(`Waiting for confirmation...`, 'info');
+        let receipt = null;
+        for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const receiptRes = await fetch(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    method: 'eth_getTransactionReceipt',
+                    params: [txHash],
+                    id: 4
+                })
+            });
+            const receiptData = await receiptRes.json();
+            if (receiptData.result) {
+                receipt = receiptData.result;
+                break;
+            }
+        }
+        
+        if (receipt) {
+            const status = receipt.status === '0x1' ? 'success' : 'failed';
+            log(`Transaction ${status} in block ${parseInt(receipt.blockNumber, 16)}`, status === 'success' ? 'success' : 'error');
+            
+            if (status === 'success') {
+                await fetchRpcBalances();
+            }
+        } else {
+            log('Transaction pending (timeout waiting for receipt)', 'warn');
+        }
+        
+    } catch (e) {
+        log(`Transaction error: ${e.message}`, 'error');
+    }
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+    log('Burner Wallet UI loaded', 'info');
+    log(`Network: ${NETWORK} (chain ${CHAIN_ID})`, 'info');
+    log(`PIR Server: ${PIR_SERVER}`, 'info');
+    
+    await loadWasm();
+    loadStoredWallet();
+});
+</script>
+{% endblock %}
