@@ -9,6 +9,7 @@ members = [
     "crates/inspire-core",
     "crates/inspire-server",
     "crates/inspire-client",
+    "crates/inspire-client-wasm",
     "crates/lane-builder",
 ]
 

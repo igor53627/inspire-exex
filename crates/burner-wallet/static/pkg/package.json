@@ -1,0 +1,21 @@
+{
+  "name": "alloy-wasm",
+  "type": "module",
+  "description": "Alloy-rs compiled to WASM for browser wallet operations",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/igor53627/inspire-exex"
+  },
+  "files": [
+    "alloy_wasm_bg.wasm",
+    "alloy_wasm.js",
+    "alloy_wasm.d.ts"
+  ],
+  "main": "alloy_wasm.js",
+  "types": "alloy_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

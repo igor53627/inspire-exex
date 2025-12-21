@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Generated assets
+static/helios/
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Build
+target/
