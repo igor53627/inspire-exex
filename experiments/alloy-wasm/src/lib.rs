@@ -1,18 +1,11 @@
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::{sol, SolCall};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
-use alloy_eips::eip7702::{Authorization, SignedAuthorization};
-use alloy_eips::eip2718::Encodable2718;
-use alloy_consensus::{SignableTransaction, TxEip7702};
+use alloy_eips::eip7702::Authorization;
 use alloy_rlp::Encodable;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen(start)]
-pub fn init_panic_hook() {
-    console_error_panic_hook::set_once();
-}
 
 sol! {
     function balanceOf(address account) external view returns (uint256);
@@ -44,32 +37,15 @@ pub struct SignedAuthorizationResult {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Eip7702TxRequest {
-    pub chain_id: u64,
-    pub nonce: u64,
-    pub max_priority_fee_per_gas: String,
-    pub max_fee_per_gas: String,
-    pub gas_limit: u64,
+pub struct Call {
     pub to: String,
     pub value: String,
     pub data: String,
-    pub authorization_list: Vec<SignedAuthorizationInput>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SignedAuthorizationInput {
-    pub chain_id: u64,
-    pub address: String,
-    pub nonce: u64,
-    pub y_parity: u8,
-    pub r: String,
-    pub s: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SignedTxResult {
-    pub tx_hash: String,
-    pub raw_tx: String,
+pub struct BatchCallData {
+    pub encoded: String,
 }
 
 fn parse_hex(s: &str) -> Result<Vec<u8>, JsError> {
@@ -95,7 +71,7 @@ pub fn generate_wallet() -> Result<String, JsError> {
     let signer = PrivateKeySigner::random();
     let info = WalletInfo {
         private_key: to_hex(signer.to_bytes().as_slice()),
-        address: signer.address().to_string(),
+        address: format!("{:?}", signer.address()),
     };
     serde_json::to_string(&info).map_err(|e| JsError::new(&format!("{}", e)))
 }
@@ -103,7 +79,7 @@ pub fn generate_wallet() -> Result<String, JsError> {
 #[wasm_bindgen]
 pub fn get_address(private_key: &str) -> Result<String, JsError> {
     let signer = get_signer(private_key)?;
-    Ok(signer.address().to_string())
+    Ok(format!("{:?}", signer.address()))
 }
 
 #[wasm_bindgen]
@@ -131,17 +107,13 @@ pub fn sign_authorization(
     let mut rlp_buf = Vec::new();
     signed.encode(&mut rlp_buf);
     
-    let r_bytes: [u8; 32] = signed.r().to_be_bytes();
-    let s_bytes: [u8; 32] = signed.s().to_be_bytes();
-    
     let result = SignedAuthorizationResult {
-        chain_id: signed.chain_id().try_into()
-            .map_err(|_| JsError::new("Chain ID overflow"))?,
-        address: signed.address().to_string(),
+        chain_id: signed.chain_id().try_into().unwrap_or(0),
+        address: format!("{:?}", signed.address()),
         nonce: signed.nonce(),
         y_parity: signed.y_parity(),
-        r: to_hex(&r_bytes),
-        s: to_hex(&s_bytes),
+        r: format!("{:?}", signed.r()),
+        s: format!("{:?}", signed.s()),
         rlp_encoded: to_hex(&rlp_buf),
     };
     
@@ -203,7 +175,7 @@ pub fn keccak256(data: &[u8]) -> Vec<u8> {
 pub fn parse_address(address: &str) -> Result<String, JsError> {
     let addr: Address = address.parse()
         .map_err(|e| JsError::new(&format!("Invalid address: {}", e)))?;
-    Ok(addr.to_string())
+    Ok(format!("{:?}", addr))
 }
 
 #[wasm_bindgen]
@@ -250,92 +222,6 @@ pub fn parse_units(value: &str, decimals: u8) -> Result<String, JsError> {
     Ok(result.to_string())
 }
 
-#[wasm_bindgen]
-pub fn sign_eip7702_tx(
-    private_key: &str,
-    tx_request_json: &str,
-) -> Result<String, JsError> {
-    let signer = get_signer(private_key)?;
-    let req: Eip7702TxRequest = serde_json::from_str(tx_request_json)
-        .map_err(|e| JsError::new(&format!("Invalid tx request: {}", e)))?;
-    
-    let to_addr: Address = req.to.parse()
-        .map_err(|e| JsError::new(&format!("Invalid to address: {}", e)))?;
-    
-    let value: U256 = req.value.parse()
-        .map_err(|e| JsError::new(&format!("Invalid value: {}", e)))?;
-    
-    let max_priority_fee: u128 = req.max_priority_fee_per_gas.parse()
-        .map_err(|e| JsError::new(&format!("Invalid max_priority_fee_per_gas: {}", e)))?;
-    
-    let max_fee: u128 = req.max_fee_per_gas.parse()
-        .map_err(|e| JsError::new(&format!("Invalid max_fee_per_gas: {}", e)))?;
-    
-    let data = if req.data.is_empty() || req.data == "0x" {
-        Bytes::new()
-    } else {
-        Bytes::from(parse_hex(&req.data)?)
-    };
-    
-    let mut auth_list: Vec<SignedAuthorization> = Vec::new();
-    for auth_input in &req.authorization_list {
-        let addr: Address = auth_input.address.parse()
-            .map_err(|e| JsError::new(&format!("Invalid auth address: {}", e)))?;
-        
-        let r_bytes: [u8; 32] = parse_hex(&auth_input.r)?
-            .try_into()
-            .map_err(|_| JsError::new("Invalid R length"))?;
-        let s_bytes: [u8; 32] = parse_hex(&auth_input.s)?
-            .try_into()
-            .map_err(|_| JsError::new("Invalid S length"))?;
-        
-        let auth = Authorization {
-            chain_id: U256::from(auth_input.chain_id),
-            address: addr,
-            nonce: auth_input.nonce,
-        };
-        
-        let sig = alloy_primitives::Signature::from_scalars_and_parity(
-            B256::from(r_bytes),
-            B256::from(s_bytes),
-            auth_input.y_parity != 0,
-        );
-        
-        auth_list.push(auth.into_signed(sig));
-    }
-    
-    let tx = TxEip7702 {
-        chain_id: req.chain_id,
-        nonce: req.nonce,
-        max_priority_fee_per_gas: max_priority_fee,
-        max_fee_per_gas: max_fee,
-        gas_limit: req.gas_limit,
-        to: to_addr,
-        value,
-        input: data,
-        access_list: Default::default(),
-        authorization_list: auth_list,
-    };
-    
-    let sig_hash = tx.signature_hash();
-    let sig = signer.sign_hash_sync(&sig_hash)
-        .map_err(|e| JsError::new(&format!("Signing failed: {}", e)))?;
-    
-    let signed_tx = tx.into_signed(sig);
-    
-    let mut rlp_buf = Vec::new();
-    signed_tx.encode_2718(&mut rlp_buf);
-    
-    let tx_hash = signed_tx.hash();
-    
-    let result = SignedTxResult {
-        tx_hash: to_hex(tx_hash.as_slice()),
-        raw_tx: to_hex(&rlp_buf),
-    };
-    
-    serde_json::to_string(&result).map_err(|e| JsError::new(&format!("{}", e)))
-}
-
 mod hex {
     pub fn decode(s: &str) -> Result<Vec<u8>, std::fmt::Error> {
         if s.len() % 2 != 0 {
@@ -346,7 +232,7 @@ mod hex {
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| std::fmt::Error))
             .collect()
     }
-
+    
     pub fn encode(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
