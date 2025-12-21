@@ -1,12 +1,19 @@
-# Two-Lane InsPIRe PIR Protocol Specification
+# InsPIRe PIR Protocol Specification
 
-This document specifies the **Two-Lane InsPIRe PIR** protocol for private Ethereum
-state queries. It extends the single-lane InsPIRe PIR construction (as
-implemented in [`inspire-rs`]) with a **two-lane (hot/cold) database
-partitioning** strategy to reduce average query latency while preserving full
-within-lane PIR privacy.
+This document specifies the **InsPIRe PIR** protocol for private Ethereum
+state queries, as implemented in [`inspire-rs`] and extended by `inspire-exex`.
 
 [`inspire-rs`]: https://github.com/igor53627/inspire-rs
+
+## Version Note
+
+> **Initial Version**: The initial implementation uses a **single lane**
+> containing full Ethereum state (~2.7B entries). This provides complete
+> coverage with no lane-level privacy leakage.
+>
+> **Future Optimization**: A two-lane (hot/cold) architecture is specified
+> below for future optimization. This trades ~1 bit of lane-level leakage
+> for 10x faster server response on popular contracts.
 
 ---
 
@@ -42,6 +49,13 @@ goal is to protect client query indices even if the server is honest-but-curious
   `(contract_address, storage_slot)` or another canonical key).
 
 - **Lane Partitioning**  
+
+  **Initial Version (Single Lane)**:
+  - All of `U` is served from a single database.
+  - Encoded as a PIR database with approximately **2.7B entries** and size ~87 GB.
+  - No lane-level privacy leakage.
+
+  **Future Optimization (Two Lanes)**:
   `U` is partitioned into two disjoint subsets:
   - **Hot lane** `U_hot`  
     - Contains state for approximately the top **1,000** contracts by query

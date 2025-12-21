@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hot Contracts List Documentation (#19)
+  - `docs/HOT_CONTRACTS.md`: Comprehensive documentation of hot lane contract selection
+  - `data/hot-contracts.json`: Machine-readable contract list with 43 initial contracts
+  - Categories: stablecoins, DEX, lending, privacy, bridges, liquid staking, restaking, NFT
+  - Category weights: Privacy 3x, Bridge 2x, DeFi 1.5x, Standard 1x
+  - Scoring algorithm combining gas usage, tx count, TVL, and curated boosts
+  - Data sources: Etherscan Gas Tracker, Dune Analytics, DeFiLlama
+  - Weekly update process documentation
+  - Versioning scheme for contract list updates
+
 - Snapshot Freshness & Helios Verification (#42, #49)
   - `WalletCoreConfig` policy knobs for snapshot verification:
     - `minConfirmationsForSafety` (default: 64 blocks)

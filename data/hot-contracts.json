@@ -1,0 +1,343 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2024-12-21T00:00:00Z",
+  "block_number": null,
+  "description": "Curated list of Ethereum contracts for Two-Lane InsPIRe hot lane",
+  "sources": [
+    "https://etherscan.io/gastracker",
+    "https://dune.com/nbphuoc/eth-top-contracts",
+    "https://defillama.com/chain/ethereum"
+  ],
+  "category_weights": {
+    "privacy": 3.0,
+    "bridge": 2.0,
+    "stablecoin": 1.5,
+    "dex": 1.5,
+    "lending": 1.5,
+    "liquid_staking": 1.5,
+    "restaking": 1.5,
+    "nft": 1.0,
+    "token": 1.0,
+    "l2": 1.0,
+    "governance": 1.0
+  },
+  "contracts": [
+    {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "name": "USDC",
+      "category": "stablecoin",
+      "estimated_slots": 500000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "name": "USDT",
+      "category": "stablecoin",
+      "estimated_slots": 500000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0x6B175474E89094C44Da98b954EescdeCB5BE3d842",
+      "name": "DAI",
+      "category": "stablecoin",
+      "estimated_slots": 300000,
+      "source": "curated"
+    },
+    {
+      "address": "0x853d955aCEf822Db058eb8505911ED77F175b99e",
+      "name": "FRAX",
+      "category": "stablecoin",
+      "estimated_slots": 50000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x5f98805A4E8be255a32880FDeC7F6728C6568bA0",
+      "name": "LUSD",
+      "category": "stablecoin",
+      "estimated_slots": 30000,
+      "source": "defillama"
+    },
+    {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "WETH",
+      "category": "token",
+      "estimated_slots": 1000000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "name": "WBTC",
+      "category": "token",
+      "estimated_slots": 100000,
+      "source": "curated"
+    },
+    {
+      "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+      "name": "UNI",
+      "category": "governance",
+      "estimated_slots": 100000,
+      "source": "curated"
+    },
+    {
+      "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+      "name": "AAVE",
+      "category": "governance",
+      "estimated_slots": 50000,
+      "source": "curated"
+    },
+    {
+      "address": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
+      "name": "LDO",
+      "category": "governance",
+      "estimated_slots": 50000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+      "name": "Uniswap V2 Router",
+      "category": "dex",
+      "estimated_slots": 10000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+      "name": "Uniswap V3 Router",
+      "category": "dex",
+      "estimated_slots": 10000,
+      "source": "curated"
+    },
+    {
+      "address": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      "name": "Uniswap Universal Router",
+      "category": "dex",
+      "estimated_slots": 10000,
+      "source": "curated"
+    },
+    {
+      "address": "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7",
+      "name": "Curve 3pool",
+      "category": "dex",
+      "estimated_slots": 5000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+      "name": "1inch Router v5",
+      "category": "dex",
+      "estimated_slots": 5000,
+      "source": "curated"
+    },
+    {
+      "address": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+      "name": "Aave V3 Pool",
+      "category": "lending",
+      "estimated_slots": 200000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9",
+      "name": "Aave V2 Pool",
+      "category": "lending",
+      "estimated_slots": 200000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B",
+      "name": "Compound Comptroller",
+      "category": "lending",
+      "estimated_slots": 50000,
+      "source": "curated"
+    },
+    {
+      "address": "0xC13e21B648A5Ee794902342038FF3aDAB66BE987",
+      "name": "Spark Pool",
+      "category": "lending",
+      "estimated_slots": 100000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF",
+      "name": "Tornado Cash 0.1 ETH",
+      "category": "privacy",
+      "estimated_slots": 10000,
+      "source": "curated"
+    },
+    {
+      "address": "0xA160cdAB225685dA1d56aa342Ad8841c3b53f291",
+      "name": "Tornado Cash 1 ETH",
+      "category": "privacy",
+      "estimated_slots": 50000,
+      "source": "curated"
+    },
+    {
+      "address": "0xD4B88Df4D29F5CedD6857912842cff3b20C8Cfa3",
+      "name": "Tornado Cash 10 ETH",
+      "category": "privacy",
+      "estimated_slots": 30000,
+      "source": "curated"
+    },
+    {
+      "address": "0xFD8610d20aA15b7B2E3Be39B396a1bC3516c7144",
+      "name": "Tornado Cash 100 ETH",
+      "category": "privacy",
+      "estimated_slots": 10000,
+      "source": "curated"
+    },
+    {
+      "address": "0xFA7093CDD9EE6932B4eb2c9e1cde7CE00B1FA4b9",
+      "name": "Railgun Smart Wallet",
+      "category": "privacy",
+      "estimated_slots": 20000,
+      "source": "curated"
+    },
+    {
+      "address": "0x603bb2c05d474794ea97805e8de69bccfb3bca12",
+      "name": "Aztec L2 Rollup",
+      "category": "privacy",
+      "estimated_slots": 50000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a",
+      "name": "Arbitrum Bridge",
+      "category": "bridge",
+      "estimated_slots": 100000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
+      "name": "Optimism Bridge",
+      "category": "bridge",
+      "estimated_slots": 100000,
+      "source": "curated"
+    },
+    {
+      "address": "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+      "name": "Polygon Bridge",
+      "category": "bridge",
+      "estimated_slots": 50000,
+      "source": "curated"
+    },
+    {
+      "address": "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
+      "name": "Base Portal",
+      "category": "bridge",
+      "estimated_slots": 100000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0x32400084C286CF3E17e7B677ea9583e60a000324",
+      "name": "zkSync Bridge",
+      "category": "bridge",
+      "estimated_slots": 50000,
+      "source": "curated"
+    },
+    {
+      "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "name": "Lido stETH",
+      "category": "liquid_staking",
+      "estimated_slots": 500000,
+      "source": "defillama"
+    },
+    {
+      "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+      "name": "Rocket Pool rETH",
+      "category": "liquid_staking",
+      "estimated_slots": 100000,
+      "source": "defillama"
+    },
+    {
+      "address": "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704",
+      "name": "Coinbase cbETH",
+      "category": "liquid_staking",
+      "estimated_slots": 100000,
+      "source": "defillama"
+    },
+    {
+      "address": "0xa2E3356610840701BDf5611a53974510Ae27E2e1",
+      "name": "Binance BETH",
+      "category": "liquid_staking",
+      "estimated_slots": 100000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x858646372CC42E1A627fcE94aa7A7033e7CF075A",
+      "name": "EigenLayer StrategyManager",
+      "category": "restaking",
+      "estimated_slots": 50000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x39053D51B77DC0d36036Fc1fCc8Cb819df8Ef37A",
+      "name": "EigenLayer DelegationManager",
+      "category": "restaking",
+      "estimated_slots": 50000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+      "name": "ether.fi eETH",
+      "category": "restaking",
+      "estimated_slots": 100000,
+      "source": "defillama"
+    },
+    {
+      "address": "0x0000000000000068F116a894984e2DB1123eB395",
+      "name": "Seaport 1.6",
+      "category": "nft",
+      "estimated_slots": 20000,
+      "source": "curated"
+    },
+    {
+      "address": "0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC",
+      "name": "Seaport 1.5",
+      "category": "nft",
+      "estimated_slots": 20000,
+      "source": "curated"
+    },
+    {
+      "address": "0x00000000006c3852cbEf3e08E8dF289169EdE581",
+      "name": "Seaport 1.1",
+      "category": "nft",
+      "estimated_slots": 20000,
+      "source": "curated"
+    },
+    {
+      "address": "0x39da41747a83aeE658334415666f3EF92DD0D541",
+      "name": "Blur Marketplace",
+      "category": "nft",
+      "estimated_slots": 10000,
+      "source": "etherscan"
+    },
+    {
+      "address": "0x495f947276749Ce646f68AC8c248420045cb7b5e",
+      "name": "OpenSea Shared Storefront",
+      "category": "nft",
+      "estimated_slots": 1000000,
+      "source": "curated"
+    },
+    {
+      "address": "0x00000000F9490004C11Cef243f5400493c00Ad63",
+      "name": "Seaport ConduitController",
+      "category": "nft",
+      "estimated_slots": 5000,
+      "source": "curated"
+    }
+  ],
+  "summary": {
+    "total_contracts": 43,
+    "total_estimated_slots": 5765000,
+    "by_category": {
+      "stablecoin": 5,
+      "token": 2,
+      "governance": 3,
+      "dex": 5,
+      "lending": 4,
+      "privacy": 6,
+      "bridge": 5,
+      "liquid_staking": 4,
+      "restaking": 3,
+      "nft": 6
+    }
+  }
+}

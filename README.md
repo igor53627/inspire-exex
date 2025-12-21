@@ -16,9 +16,24 @@ Wallets need to query Ethereum state (balances, positions) privately. Current ap
 
 The InspiRING 2-matrix packing algorithm provides up to **9.2x bandwidth reduction** vs baseline.
 
-## Solution: Two-Lane InsPIRe
+## Solution: InsPIRe PIR for Ethereum
 
-Split the database into lanes by popularity:
+### Initial Version: Single Lane (Full State)
+
+The initial implementation uses a **single lane** containing full Ethereum state:
+
+```
+FULL STATE:  All contracts + accounts -> ~2.7B entries -> Complete coverage
+```
+
+This provides:
+- **Full privacy**: Query index hidden across entire state
+- **Simplicity**: No lane routing, no manifest management
+- **Complete coverage**: Any address/contract queryable
+
+### Future Optimization: Two-Lane Architecture
+
+A future optimization splits the database by popularity (see [docs/HOT_CONTRACTS.md](docs/HOT_CONTRACTS.md)):
 
 ```
 HOT LANE:  Top 1,000 contracts -> 1M entries  -> Fast server response
@@ -28,6 +43,9 @@ COLD LANE: Everything else    -> 2.7B entries -> Slower server response
 Query size depends on variant (48-192 KB), but the hot lane has faster
 server-side processing due to smaller database polynomial evaluation.
 
+The two-lane design trades ~1 bit of lane-level leakage for 10x faster
+server response on popular contracts.
+
 ## Key Benefits (InspiRING 2-Matrix Packing)
 
 - **226x faster** online packing (InspiRING vs tree packing)
@@ -35,6 +53,18 @@ server-side processing due to smaller database polynomial evaluation.
 - Only 2 key-switching matrices vs log(d)=11 matrices
 
 ## Architecture
+
+### Initial Version: Single Lane
+
+```
+FULL STATE (~87 GB, 2.7B entries)
+  - All Ethereum contracts and accounts
+  - Query size: 48-192 KB (depending on variant)
+  - Complete state coverage
+  - No lane-level privacy leakage
+```
+
+### Future: Two-Lane Architecture
 
 ```
 HOT LANE  (~32 MB, 1M entries)
@@ -50,7 +80,7 @@ COLD LANE (~87 GB, 2.7B entries)
 ```
 
 Note: InsPIRe communication is O(d) where d=ring dimension (2048), **not** O(√N).
-Query size is the same regardless of database size. The benefit of the hot lane
+Query size is the same regardless of database size. The benefit of hot lane
 is faster server-side computation, not smaller queries.
 
 ## Performance (Benchmarked)
@@ -161,9 +191,12 @@ The following information is **intentionally public**:
 - Lane CRS (cryptographic reference strings)
 - Lane entry counts
 
-## Hot Lane Contract Selection
+## Hot Lane Contract Selection (Future)
 
-Updated weekly based on on-chain analytics using **hybrid scoring**:
+> **Note**: The initial version uses a single lane with full state.
+> Hot lane optimization is planned for future releases.
+
+When enabled, the hot lane is updated weekly based on on-chain analytics using **hybrid scoring**:
 
 ### Data Sources
 
@@ -181,7 +214,7 @@ cargo run --bin lane-backfill --features backfill -- \
 lane-builder ./pir-data/hot 21000000 --scored hot-contracts.json
 ```
 
-See [docs/GAS_BACKFILL.md](docs/GAS_BACKFILL.md) for details.
+See [docs/HOT_CONTRACTS.md](docs/HOT_CONTRACTS.md) for the curated contract list and [docs/GAS_BACKFILL.md](docs/GAS_BACKFILL.md) for backfill details.
 
 ### Categories
 
