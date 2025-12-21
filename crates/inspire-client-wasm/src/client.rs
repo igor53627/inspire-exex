@@ -11,11 +11,11 @@ use inspire_pir::{
 };
 use inspire_pir::math::GaussianSampler;
 use inspire_pir::params::ShardConfig;
-use inspire_pir::rlwe::RlweSecretKey;
 use inspire_core::PIR_PARAMS_VERSION;
 
 use crate::console_log;
 use crate::error::PirError;
+use crate::security::{check_webcrypto_available, SecureSecretKey};
 use crate::transport::HttpClient;
 
 #[derive(Deserialize)]
@@ -43,7 +43,7 @@ struct QueryResponse {
 struct ClientInner {
     http: HttpClient,
     crs: ServerCrs,
-    secret_key: RlweSecretKey,
+    secret_key: SecureSecretKey,
     entry_count: u64,
     shard_config: ShardConfig,
     lane: String,
@@ -67,6 +67,8 @@ impl PirClient {
 
     #[wasm_bindgen]
     pub async fn init(&mut self, lane: &str) -> Result<(), JsValue> {
+        check_webcrypto_available()?;
+        
         let http = HttpClient::new(self.server_url.clone());
         
         console_log!("Checking server PIR params version...");
@@ -95,7 +97,8 @@ impl PirClient {
         
         console_log!("Generating secret key...");
         let mut sampler = GaussianSampler::new(crs.params.sigma);
-        let secret_key = RlweSecretKey::generate(&crs.params, &mut sampler);
+        let raw_key = inspire_pir::rlwe::RlweSecretKey::generate(&crs.params, &mut sampler);
+        let secret_key = SecureSecretKey::new(raw_key);
         
         console_log!("Client initialized: {} entries", crs_resp.entry_count);
         
@@ -132,7 +135,7 @@ impl PirClient {
             &inner.crs,
             index,
             &inner.shard_config,
-            &inner.secret_key,
+            inner.secret_key.as_ref(),
             &mut sampler,
         ).map_err(|e| PirError::Pir(e.to_string()))?;
         
@@ -168,7 +171,7 @@ impl PirClient {
             &inner.crs,
             index,
             &inner.shard_config,
-            &inner.secret_key,
+            inner.secret_key.as_ref(),
             &mut sampler,
         ).map_err(|e| PirError::Pir(e.to_string()))?;
         

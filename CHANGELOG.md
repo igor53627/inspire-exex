@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- WASM client security hardening (#41)
+  - `SecureSecretKey` wrapper with `Drop` impl that zeroizes RlweSecretKey memory
+  - Fail-fast check for WebCrypto CSPRNG availability on init
+  - `CryptoUnavailable` error variant for clear error messages
+  - Uses `zeroize` crate for secure memory clearing
+  - Validates `crypto.getRandomValues` via getrandom before key generation
+
 - Prometheus metrics and observability (#43)
   - PIR request metrics: `pir_requests_total`, `pir_request_duration_seconds` (by lane/outcome)
   - Lane status metrics: `pir_lane_loaded`, `pir_lane_block_number`, `pir_lane_mmap_mode`
