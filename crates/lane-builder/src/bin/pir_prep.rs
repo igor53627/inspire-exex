@@ -180,13 +180,28 @@ unsafe fn extract_storage_for_pir(args: &Args) -> Result<u64> {
         // - Remaining bytes: RLP-encoded U256 storage value
 
         if key_bytes.len() != 20 {
+            if skipped < 10 {
+                tracing::warn!(
+                    "Skipping entry {}: unexpected key_len={} (expected 20)",
+                    count + skipped,
+                    key_bytes.len()
+                );
+            }
             skipped += 1;
             rc = mdbx_cursor_get(cursor, &mut key, &mut val, MDBX_NEXT as MDBX_cursor_op);
             continue;
         }
 
-        // Value should be at least 32 bytes (slot) + 1 byte (minimal RLP)
-        if val_bytes.len() < 33 {
+        // Value should be at least 32 bytes (slot)
+        // Value can be exactly 32 bytes if storage value is 0 (empty)
+        if val_bytes.len() < 32 {
+            if skipped < 10 {
+                tracing::warn!(
+                    "Skipping entry {}: unexpected val_len={} (expected >= 32)",
+                    count + skipped,
+                    val_bytes.len()
+                );
+            }
             skipped += 1;
             rc = mdbx_cursor_get(cursor, &mut key, &mut val, MDBX_NEXT as MDBX_cursor_op);
             continue;
@@ -196,9 +211,13 @@ unsafe fn extract_storage_for_pir(args: &Args) -> Result<u64> {
         let slot = &val_bytes[0..32];
 
         // Decode the storage value from the remaining bytes after slot
-        // Reth stores U256 values in a compact format, not necessarily RLP
-        // Let me first check if it's just raw bytes padded
-        let value_part = &val_bytes[32..];
+        // Reth stores U256 values in a compact format (variable length, big-endian)
+        let value_part = if val_bytes.len() > 32 {
+            &val_bytes[32..]
+        } else {
+            // If exactly 32 bytes, value is empty (0)
+            &[]
+        };
         
         // Debug: print first few entries to understand format
         if count < 10 {
