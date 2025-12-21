@@ -5,6 +5,7 @@
 
 mod client;
 mod error;
+mod security;
 mod transport;
 
 pub use client::PirClient;

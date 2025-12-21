@@ -10,6 +10,7 @@ pub enum PirError {
     NotInitialized,
     IndexOutOfBounds(u64),
     VersionMismatch { client: u16, server: u16 },
+    CryptoUnavailable,
 }
 
 impl std::fmt::Display for PirError {
@@ -25,6 +26,12 @@ impl std::fmt::Display for PirError {
                     f,
                     "PIR params version mismatch: client v{}, server v{}. Update client or regenerate server CRS.",
                     client, server
+                )
+            }
+            PirError::CryptoUnavailable => {
+                write!(
+                    f,
+                    "WebCrypto API (crypto.getRandomValues) is not available. PIR client requires a secure random number generator."
                 )
             }
         }
