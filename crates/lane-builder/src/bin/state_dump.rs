@@ -21,10 +21,11 @@ use eyre::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use reth_db::{
     cursor::DbCursorRO,
+    mdbx::DatabaseArguments,
     open_db_read_only,
     tables,
     transaction::DbTx,
-    Database,
+    ClientVersion, Database,
 };
 use serde::{Deserialize, Serialize};
 
@@ -120,7 +121,8 @@ fn main() -> Result<()> {
 
 fn open_database_read_only(path: &PathBuf) -> Result<impl Database> {
     tracing::info!(path = %path.display(), "Opening MDBX database read-only");
-    let db = open_db_read_only(path, Default::default())?;
+    let args = DatabaseArguments::new(ClientVersion::default());
+    let db = open_db_read_only(path, args)?;
     Ok(db)
 }
 
