@@ -13,8 +13,8 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use inspire_core::{HotLaneManifest, Lane, LaneRouter, TwoLaneConfig, CrsMetadata, PIR_PARAMS_VERSION};
 use inspire_pir::{
-    params::ShardConfig, respond_one_packing, respond_mmap_one_packing, ClientQuery, EncodedDatabase, MmapDatabase,
-    ServerCrs, ServerResponse,
+    params::ShardConfig, respond_one_packing, respond_mmap_one_packing, respond_inspiring,
+    ClientQuery, EncodedDatabase, MmapDatabase, ServerCrs, ServerResponse,
 };
 
 use crate::error::{Result, ServerError};
@@ -95,14 +95,24 @@ impl LaneData {
 
     /// Process a PIR query and return the response
     ///
-    /// Uses tree packing (OnePacking) to reduce response size from 544 KB to 32 KB.
+    /// Uses InspiRING packing (~35x faster) when packing keys available,
+    /// otherwise falls back to tree packing. Both reduce response from 544 KB to 32 KB.
     pub fn process_query(&self, query: &ClientQuery) -> Result<ServerResponse> {
         match &self.database {
             LaneDatabase::InMemory(db) => {
-                respond_one_packing(&self.crs, db, query).map_err(|e| ServerError::PirError(e.to_string()))
+                // Use InspiRING if packing keys available (~35x faster), otherwise tree packing
+                if query.inspiring_packing_keys.is_some() {
+                    respond_inspiring(&self.crs, db, query)
+                        .map_err(|e| ServerError::PirError(e.to_string()))
+                } else {
+                    respond_one_packing(&self.crs, db, query)
+                        .map_err(|e| ServerError::PirError(e.to_string()))
+                }
             }
             LaneDatabase::Mmap(db) => {
-                respond_mmap_one_packing(&self.crs, db, query).map_err(|e| ServerError::PirError(e.to_string()))
+                // TODO: Add respond_mmap_inspiring when needed
+                respond_mmap_one_packing(&self.crs, db, query)
+                    .map_err(|e| ServerError::PirError(e.to_string()))
             }
         }
     }

@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **inspire-server**: Use InspiRING packing (~35x faster) when packing keys available in query, otherwise tree packing
 - **BREAKING**: `getBalance()` now throws `AddressNotFoundError` when address is not in PIR database (#49)
   - Previously returned zero balances, which was semantically incorrect
   - Use `getBalanceWithFallback()` for the "always returns a result" behavior
