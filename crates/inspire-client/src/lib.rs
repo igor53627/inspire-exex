@@ -1,10 +1,12 @@
-//! inspire-client: Two-lane PIR client
+//! inspire-client: PIR client with sparse bucket index
 //!
-//! Routes queries to hot or cold lane based on contract address,
-//! minimizing bandwidth by using the smaller hot lane when possible.
+//! Uses bucket index (~150 KB) for O(1) client-side index lookups.
+//! No manifest download required - clients compute indices locally.
 
+pub mod bucket_index;
 pub mod client;
 pub mod error;
 
+pub use bucket_index::{BucketIndex, BucketRange, BucketDelta, compute_bucket_id};
 pub use client::TwoLaneClient;
 pub use error::ClientError;
