@@ -16,6 +16,8 @@ backfill = ["dep:alloy-provider", "dep:alloy-rpc-types", "dep:alloy-primitives",
 balance = ["dep:alloy-provider", "dep:alloy-rpc-types", "dep:alloy-primitives", "dep:alloy-transport", "dep:futures", "dep:clap", "dep:indicatif"]
 # Enable full state dump from reth MDBX database
 state-dump = ["dep:mdbx-rs", "dep:eyre", "dep:clap", "dep:indicatif", "dep:color-eyre"]
+# Enable bucket index builder for sparse PIR lookups
+bucket-index = ["dep:clap", "dep:indicatif", "dep:tiny-keccak", "dep:zstd"]
 
 [[bin]]
 name = "lane-builder"
@@ -40,6 +42,11 @@ required-features = ["balance"]
 name = "state-dump"
 path = "src/bin/state_dump.rs"
 required-features = ["state-dump"]
+
+[[bin]]
+name = "bucket-index"
+path = "src/bin/bucket_index.rs"
+required-features = ["bucket-index"]
 
 [dependencies]
 inspire-core = { path = "../inspire-core" }
@@ -71,6 +78,10 @@ indicatif = { workspace = true, optional = true }
 # MDBX for direct state dump
 mdbx-rs = { git = "https://github.com/igor53627/mdbx-rs", optional = true }
 color-eyre = { version = "0.6", optional = true }
+
+# Bucket index builder
+tiny-keccak = { version = "2.0", features = ["keccak"], optional = true }
+zstd = { version = "0.13", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
