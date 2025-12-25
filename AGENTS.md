@@ -60,17 +60,16 @@ cargo build -p lane-builder --release
 
 ## Integration Points
 
-1. **inspire-rs**: Use existing PIR primitives
-2. **plinko-extractor**: Use for hot lane contract identification
-3. **Reth ExEx**: Real-time hot lane updates
+1. **inspire-rs**: Core PIR primitives
+2. **ethrex**: Ethereum client with UBT support and PIR export
 
 ## Related Projects
 
 | Project | Path | Purpose |
 |---------|------|---------|
 | inspire-rs | ~/pse/inspire | Base PIR implementation |
-| plinko-extractor | ~/pse/plinko-extractor | State extraction |
-| pse-client | ~/pse/pse-client | Base client |
+| ethrex | ~/pse/ethrex | Ethereum client with UBT |
+| ubt-rs | ~/pse/ubt-rs | UBT implementation |
 
 ## Remote Resources
 

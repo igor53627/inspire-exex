@@ -45,17 +45,10 @@ PIR-encoded database. See inspire-rs documentation for format details.
 ### 1. Export State from ethrex
 
 ```bash
-# Plain mode (requires UBT feature during sync)
 ethrex-pir-export \
     --datadir /path/to/ethrex \
     --block 9900000 \
     --output state.bin
-
-# Hashed mode (fallback, larger records)
-ethrex-pir-export \
-    --datadir /path/to/ethrex \
-    --output state-hashed.bin \
-    --hashed
 ```
 
 ### 2. Encode PIR Database
@@ -73,11 +66,16 @@ inspire-server database.bin --port 3000
 ### 4. Query Privately
 
 ```bash
-# Using inspire-client
-inspire-client http://localhost:3000 --index 12345
+# Clients compute stem/subindex via EIP-7864, then derive the PIR index:
+#   stem = pedersen_hash(address || slot[:31])
+#   subindex = slot[31]
+#   index = stem_to_db_offset(stem) + subindex
 
-# Using WASM client in browser
-# See inspire-client-wasm documentation
+# Using inspire-client with stem/subindex
+inspire-client http://localhost:3000 --stem 0x... --subindex 0
+
+# For debugging, you can pass a raw index directly:
+# inspire-client http://localhost:3000 --index 12345
 ```
 
 ## Integration Test

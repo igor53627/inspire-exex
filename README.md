@@ -6,9 +6,9 @@ Private Ethereum storage queries using InsPIRe PIR (Private Information Retrieva
 
 Query Ethereum storage slots via single-server PIR so the server cannot determine which database index you requested. The server sees that a query occurred (timing, size, variant), but not which storage index it targets.
 
-A public manifest maps `(contract, storage slot)` pairs to database indices; the PIR layer hides only the index, not which contracts exist in the database.
+With UBT (Unified Binary Trie, EIP-7864), clients compute indices directly using deterministic `stem(31B) + subindex(1B)` addressing - no manifest download required.
 
-**Current deployment**: Sepolia testnet snapshot with ~79M `(address, slot)` entries (internal host `hsiao:3000`)
+**Current deployment**: Sepolia testnet via ethrex with UBT
 
 ## Performance
 
@@ -28,14 +28,20 @@ Sizes shown are for default parameters (d=2048, 128-bit security). End-to-end la
 |                         inspire-exex                                |
 +---------------------------------------------------------------------+
 |                                                                     |
-|  +--------------+    +--------------+    +----------------------+   |
-|  | inspire-exex |--->| lane-builder |--->| inspire-pir (setup)  |   |
-|  | (Reth ExEx)  |    | (state-dump) |    | (inspire-setup)      |   |
-|  +--------------+    +--------------+    +----------------------+   |
-|        |                    |                      |                |
-|        | Periodic           | state.bin            | db.bin         |
-|        | state exports      | (raw storage)        | (PIR database) |
-|        v                    v                      v                |
+|  +-----------------+    +----------------------+                    |
+|  | ethrex          |--->| ethrex-pir-export    |                    |
+|  | (UBT sync)      |    | (iterate PLAIN_STORAGE)                   |
+|  +-----------------+    +----------------------+                    |
+|        |                         |                                  |
+|        | UBT state               | state.bin (stem-ordered)         |
+|        v                         v                                  |
+|  +--------------------------------------------------------------+   |
+|  |                    inspire-setup                             |   |
+|  |                    (encode PIR database)                     |   |
+|  +--------------------------------------------------------------+   |
+|                              |                                      |
+|                              | db.bin (PIR database)                |
+|                              v                                      |
 |  +--------------------------------------------------------------+   |
 |  |                    inspire-server                            |   |
 |  |                    (PIR query endpoint)                      |   |
@@ -45,6 +51,7 @@ Sizes shown are for default parameters (d=2048, 128-bit security). End-to-end la
 |                              v                                      |
 |  +--------------------------------------------------------------+   |
 |  |  inspire-client (native) / inspire-client-wasm (browser)     |   |
+|  |  Client computes index = stem_to_db_offset(stem) + subindex  |   |
 |  +--------------------------------------------------------------+   |
 |                                                                     |
 +---------------------------------------------------------------------+
@@ -56,15 +63,14 @@ Sizes shown are for default parameters (d=2048, 128-bit security). End-to-end la
 
 | Component | Description | Key Binaries |
 |-----------|-------------|--------------|
-| **inspire-exex** | Reth ExEx for Ethereum state tracking | `inspire-exex` |
-| **lane-builder** | State extraction and preparation | `state-dump` |
-| **inspire-pir** | Core PIR library (external: [inspire-rs](https://github.com/igor53627/inspire-rs)) | `inspire-setup`, `inspire-server`, `inspire-client` |
+| **ethrex** | Ethereum client with UBT support ([ethrex](https://github.com/igor53627/ethrex)) | `ethrex`, `ethrex-pir-export` |
+| **inspire-pir** | Core PIR library ([inspire-rs](https://github.com/igor53627/inspire-rs)) | `inspire-setup`, `inspire-server`, `inspire-client` |
 
 ### Client Libraries
 
 | Crate | Description |
 |-------|-------------|
-| `inspire-core` | Shared types (Config, Manifest, PIR params) |
+| `inspire-core` | Shared types (Config, PIR params, UBT helpers) |
 | `inspire-server` | PIR server with hot-reload, metrics, admin API |
 | `inspire-client` | Native Rust client with PIR query generation |
 | `inspire-client-wasm` | Browser WASM client (keys remain in browser) |
@@ -73,8 +79,8 @@ Sizes shown are for default parameters (d=2048, 128-bit security). End-to-end la
 ## Data Flow
 
 ```
-1. Extract State
-   Reth node + inspire-exex  -->  state.bin (raw storage slots)
+1. Export State from ethrex
+   ethrex (UBT sync)  -->  ethrex-pir-export  -->  state.bin (stem-ordered)
    
 2. Encode PIR Database
    state.bin + inspire-setup  -->  db.bin (PIR-encoded database)
@@ -83,14 +89,15 @@ Sizes shown are for default parameters (d=2048, 128-bit security). End-to-end la
    db.bin + inspire-server  -->  HTTP endpoint (port 3000)
    
 4. Query Privately
+   Client computes stem from (address, slot) using EIP-7864
    inspire-client  -->  PIR query  -->  server  -->  encrypted response
 ```
 
 ### Binary Usage
 
 ```bash
-# 1. Dump state from Reth node
-state-dump --datadir /path/to/reth --output state.bin
+# 1. Export state from ethrex
+ethrex-pir-export --datadir /path/to/ethrex --output state.bin
 
 # 2. Encode PIR database
 inspire-setup state.bin db.bin
@@ -98,24 +105,21 @@ inspire-setup state.bin db.bin
 # 3. Start server
 inspire-server db.bin --port 3000
 
-# 4. Query (look up index in manifest first)
-inspire-client http://localhost:3000 --index 12345
+# 4. Query (client computes index from stem + subindex)
+inspire-client http://localhost:3000 --stem 0x... --subindex 0
 ```
 
-### Index Mapping
+### Index Computation (UBT)
 
-The PIR index is a 0-based integer in `[0, N)` where `N` is the number of storage entries. A manifest file maps `(address, slot)` to indices:
+With UBT, clients compute the PIR index directly using EIP-7864 stem derivation:
 
-```json
-{
-  "entries": [
-    { "address": "0xA0b8...", "slot": "0x0", "index": 0 },
-    { "address": "0xA0b8...", "slot": "0x1", "index": 1 }
-  ]
-}
+```
+stem = pedersen_hash(address || slot[:31])  # 31 bytes
+subindex = slot[31]                          # 1 byte (0-255)
+index = stem_to_db_offset(stem) + subindex
 ```
 
-Clients use this manifest to translate `(contract, slot)` to the `--index` parameter.
+No manifest download required - the stem algorithm is deterministic.
 
 ## Protocol Variants
 
@@ -170,15 +174,11 @@ cargo test --workspace
 cargo run --release --example benchmark_large
 ```
 
-## Future Work
-
-- **Two-lane optimization**: Split database into hot (popular contracts) and cold lanes for faster server response
-- **Multi-lane extension**: Further lane splitting for different access patterns
-- See [docs/HOT_CONTRACTS.md](docs/HOT_CONTRACTS.md) for hot lane design
-
 ## References
 
 - [inspire-rs](https://github.com/igor53627/inspire-rs) - Core InsPIRe PIR implementation
+- [ethrex](https://github.com/igor53627/ethrex) - Ethereum client with UBT support
+- [EIP-7864](https://eips.ethereum.org/EIPS/eip-7864) - Unified Binary Trie specification
 - [InsPIRe Paper](https://eprint.iacr.org/2025/1352)
 
 ## License
