@@ -43,6 +43,9 @@ pub struct TwoLaneConfig {
     /// Shard size in bytes (for mmap mode, default 128KB)
     #[serde(default = "default_shard_size")]
     pub shard_size_bytes: u64,
+    /// Bucket index path (for sparse client lookups)
+    #[serde(default)]
+    pub bucket_index_path: Option<PathBuf>,
 }
 
 fn default_shard_size() -> u64 {
@@ -87,6 +90,7 @@ impl TwoLaneConfig {
             cold_lane_shards: Some(cold.join("shards")),
             use_mmap: true,
             shard_size_bytes: default_shard_size(),
+            bucket_index_path: Some(base.join("bucket-index.bin.zst")),
         }
     }
 

@@ -247,6 +247,52 @@ async fn admin_reload(State(state): State<SharedState>) -> Result<Json<ReloadRes
     Ok(Json(result))
 }
 
+/// Get bucket index (compressed)
+///
+/// Returns the bucket index for sparse client-side lookups.
+/// ~150 KB compressed, enables O(1) index computation.
+async fn get_bucket_index(State(state): State<SharedState>) -> Result<Response> {
+    let snapshot = state.load_snapshot();
+    
+    let index = snapshot.bucket_index.as_ref().ok_or_else(|| {
+        ServerError::LaneNotLoaded("Bucket index not loaded".to_string())
+    })?;
+    
+    let compressed = index.to_compressed()
+        .map_err(|e| ServerError::Internal(format!("Failed to compress bucket index: {}", e)))?;
+    
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CONTENT_ENCODING, "zstd"),
+        ],
+        compressed,
+    ).into_response())
+}
+
+/// Get bucket index info (metadata only)
+async fn get_bucket_index_info(State(state): State<SharedState>) -> Result<Json<BucketIndexInfo>> {
+    let snapshot = state.load_snapshot();
+    
+    let index = snapshot.bucket_index.as_ref().ok_or_else(|| {
+        ServerError::LaneNotLoaded("Bucket index not loaded".to_string())
+    })?;
+    
+    Ok(Json(BucketIndexInfo {
+        total_entries: index.total_entries(),
+        num_buckets: inspire_client::bucket_index::NUM_BUCKETS,
+        block_number: snapshot.block_number,
+    }))
+}
+
+/// Bucket index metadata
+#[derive(Serialize)]
+pub struct BucketIndexInfo {
+    pub total_entries: u64,
+    pub num_buckets: usize,
+    pub block_number: Option<u64>,
+}
+
 /// Parse lane from URL path
 fn parse_lane(s: &str) -> Result<Lane> {
     match s.to_lowercase().as_str() {
@@ -283,6 +329,8 @@ pub fn create_public_router_with_metrics(
         .route("/query/:lane/binary", post(query_binary))
         .route("/query/:lane/seeded", post(query_seeded))
         .route("/query/:lane/seeded/binary", post(query_seeded_binary))
+        .route("/index", get(get_bucket_index))
+        .route("/index/info", get(get_bucket_index_info))
         .with_state(state);
 
     if let Some(handle) = prometheus_handle {
@@ -322,6 +370,8 @@ pub fn create_router_with_metrics(
         .route("/query/:lane/binary", post(query_binary))
         .route("/query/:lane/seeded", post(query_seeded))
         .route("/query/:lane/seeded/binary", post(query_seeded_binary))
+        .route("/index", get(get_bucket_index))
+        .route("/index/info", get(get_bucket_index_info))
         .route("/admin/reload", post(admin_reload))
         .with_state(state);
 

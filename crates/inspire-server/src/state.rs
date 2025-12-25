@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use inspire_core::{HotLaneManifest, Lane, LaneRouter, TwoLaneConfig, CrsMetadata, PIR_PARAMS_VERSION};
+use inspire_client::BucketIndex;
 use inspire_pir::{
     params::ShardConfig, respond_one_packing, respond_mmap_one_packing, respond_inspiring,
     ClientQuery, EncodedDatabase, MmapDatabase, ServerCrs, ServerResponse,
@@ -139,6 +140,8 @@ pub struct DbSnapshot {
     pub cold_lane: Option<LaneData>,
     /// Lane router for determining query routing
     pub router: Option<LaneRouter>,
+    /// Bucket index for sparse client lookups
+    pub bucket_index: Option<BucketIndex>,
     /// Block number this snapshot reflects
     pub block_number: Option<u64>,
     /// PIR params version (from CRS metadata)
@@ -221,6 +224,7 @@ impl ServerState {
             hot_lane: None,
             cold_lane: None,
             router: None,
+            bucket_index: None,
             block_number: None,
             pir_params_version: PIR_PARAMS_VERSION,
         });
@@ -249,6 +253,7 @@ impl ServerState {
         let hot_lane = self.try_load_hot_lane();
         let cold_lane = self.try_load_cold_lane();
         let router = self.try_load_router();
+        let bucket_index = self.try_load_bucket_index();
 
         if hot_lane.is_none() && cold_lane.is_none() {
             return Err(ServerError::Internal(
@@ -262,6 +267,7 @@ impl ServerState {
             hot_lane,
             cold_lane,
             router,
+            bucket_index,
             block_number,
             pir_params_version: PIR_PARAMS_VERSION,
         });
@@ -428,6 +434,45 @@ impl ServerState {
             }
             Err(e) => {
                 tracing::warn!("Failed to load manifest: {}", e);
+                None
+            }
+        }
+    }
+
+    fn try_load_bucket_index(&self) -> Option<BucketIndex> {
+        let index_path = self.config.bucket_index_path.as_ref()?;
+
+        if !index_path.exists() {
+            tracing::debug!("Bucket index not found: {}", index_path.display());
+            return None;
+        }
+
+        match std::fs::read(index_path) {
+            Ok(data) => {
+                // Try compressed first, fall back to uncompressed
+                let result = if index_path.extension().map_or(false, |e| e == "zst") {
+                    BucketIndex::from_compressed(&data)
+                } else {
+                    BucketIndex::from_bytes(&data)
+                };
+
+                match result {
+                    Ok(index) => {
+                        tracing::info!(
+                            path = %index_path.display(),
+                            total_entries = index.total_entries(),
+                            "Bucket index loaded"
+                        );
+                        Some(index)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse bucket index: {}", e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read bucket index: {}", e);
                 None
             }
         }

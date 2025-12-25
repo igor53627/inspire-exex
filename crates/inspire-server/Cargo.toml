@@ -14,6 +14,7 @@ path = "src/bin/loadtest.rs"
 
 [dependencies]
 inspire-core = { path = "../inspire-core" }
+inspire-client = { path = "../inspire-client" }
 inspire-pir = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
