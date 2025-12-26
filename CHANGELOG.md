@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- WebSocket protocol improvements (#56)
+  - Server now responds to Ping with Pong (fixes keepalive for clients)
+  - Hello message on connect: `{"version":1,"block_number":12345}`
+  - Lagged close now includes block number: `"lagged:12345"`
+
+- Adversarial tests for bucket index security (#60)
+  - `test_delta_huge_update_count_does_not_oom`: Validates OOM protection
+  - `test_delta_truncated_updates`: Validates truncated payload rejection
+  - `test_from_compressed_rejects_oversized`: Validates decompression bomb protection
+  - `test_bucket_lookup_correctness`: Proper correctness verification for lookups
+
+### Changed
+
+- Improved API error handling and response consistency (#61)
+  - `BucketDeltaError` now includes context: `HeaderTooShort { actual }`, `Truncated { expected, actual }`
+  - Added `Decompression(String)` error variant for zstd errors (was misleading `Io`)
+  - `DecompressionBomb` now includes payload size
+  - Added `BucketIndexNotLoaded` server error (was confusing `LaneNotLoaded`)
+  - Server errors now return structured JSON: `{"error": "...", "code": "BUCKET_INDEX_NOT_LOADED"}`
+
+- Deduplicated bucket index logic between native and WASM clients (#59)
+  - Shared `inspire_core::bucket_index` module with `compute_bucket_id`, `compute_cumulative`, `BucketDelta`
+  - `inspire-client` re-exports shared types
+  - `inspire-client-wasm` wraps shared logic with `#[wasm_bindgen]` annotations
+  - Eliminates code drift risk between implementations
+
+- Cache precompressed bucket index to avoid zstd level 19 on every request (#57)
+  - `CachedBucketIndex` struct stores both parsed index and compressed bytes
+  - `/index` endpoint now serves cached bytes instead of recompressing
+  - Added `Cache-Control: public, max-age=60` headers to `/index` and `/index/raw`
+  - `/index/info` now includes `compressed_size` field
+
+### Security
+
+- Fixed DoS vulnerabilities in bucket index parsing (#55)
+  - `BucketDelta::from_bytes`: Validate `update_count` before allocating to prevent OOM via malicious delta frames
+  - `BucketIndex::from_compressed`: Limit decompression size to prevent decompression bombs
+  - WASM `apply_delta`: Same validation as native client
+
+### Added
+
+- Sparse Bucket Index for minimal client state (#53)
+  - `BucketIndex` client library with load/decompress/lookup/delta support
+  - 256K buckets (2^18), using first 18 bits of keccak256(address || slot)
+  - O(1) bucket range lookup via cumulative sums (returns start_index + count, not exact index)
+  - `BucketDelta` struct for streaming updates via websocket
+  - **Note**: Requires DB to be ordered by bucket ID; exact within-bucket index requires additional structure
+  - `bucket-index` binary in lane-builder crate for building index from state.bin
+  - Server endpoints: `GET /index` (compressed ~150 KB), `GET /index/raw` (uncompressed 512 KB for WASM), `GET /index/info` (metadata)
+  - WebSocket endpoint: `GET /index/subscribe` for delta broadcasts
+  - `BucketBroadcast` channel for per-block delta streaming to clients
+  - Client integration: `fetch_bucket_index()`, `lookup_bucket()`, `apply_bucket_delta()`
+  - WASM client: `BucketIndex` class with `from_bytes()`, `lookup()`, `apply_delta()`
+  - wallet-core: `BucketIndexWrapper` TypeScript class with `lookup()`, `applyDelta()`
+  - Compressed with zstd level 19 (~150 KB for Sepolia scale)
+
 - Hot Contracts List Documentation (#19)
   - `docs/HOT_CONTRACTS.md`: Comprehensive documentation of hot lane contract selection
   - `data/hot-contracts.json`: Machine-readable contract list with 43 initial contracts

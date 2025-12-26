@@ -3,11 +3,13 @@
 //! WASM-compatible PIR client for private Ethereum state queries.
 //! Uses browser fetch API for HTTP requests.
 
+mod bucket_index;
 mod client;
 mod error;
 mod security;
 mod transport;
 
+pub use bucket_index::BucketIndex;
 pub use client::PirClient;
 pub use error::PirError;
 

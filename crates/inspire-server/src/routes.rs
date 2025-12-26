@@ -1,13 +1,15 @@
 //! HTTP routes for the PIR server
 
 use axum::{
-    extract::{Path, State},
+    extract::{ws::WebSocketUpgrade, Path, State},
     http::header,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::broadcast::handle_index_subscription;
 
 use inspire_core::Lane;
 use inspire_pir::{params::ShardConfig, ClientQuery, SeededClientQuery, ServerResponse};
@@ -254,19 +256,38 @@ async fn admin_reload(State(state): State<SharedState>) -> Result<Json<ReloadRes
 async fn get_bucket_index(State(state): State<SharedState>) -> Result<Response> {
     let snapshot = state.load_snapshot();
     
-    let index = snapshot.bucket_index.as_ref().ok_or_else(|| {
-        ServerError::LaneNotLoaded("Bucket index not loaded".to_string())
+    let cached = snapshot.bucket_index.as_ref().ok_or_else(|| {
+        ServerError::BucketIndexNotLoaded
     })?;
-    
-    let compressed = index.to_compressed()
-        .map_err(|e| ServerError::Internal(format!("Failed to compress bucket index: {}", e)))?;
     
     Ok((
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
             (header::CONTENT_ENCODING, "zstd"),
+            (header::CACHE_CONTROL, "public, max-age=60"),
         ],
-        compressed,
+        cached.compressed.clone(),
+    ).into_response())
+}
+
+/// Get bucket index (uncompressed, 512 KB)
+///
+/// For WASM clients that can't use zstd decompression.
+async fn get_bucket_index_raw(State(state): State<SharedState>) -> Result<Response> {
+    let snapshot = state.load_snapshot();
+    
+    let cached = snapshot.bucket_index.as_ref().ok_or_else(|| {
+        ServerError::BucketIndexNotLoaded
+    })?;
+    
+    let data = cached.index.to_bytes();
+    
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CACHE_CONTROL, "public, max-age=60"),
+        ],
+        data,
     ).into_response())
 }
 
@@ -274,14 +295,15 @@ async fn get_bucket_index(State(state): State<SharedState>) -> Result<Response> 
 async fn get_bucket_index_info(State(state): State<SharedState>) -> Result<Json<BucketIndexInfo>> {
     let snapshot = state.load_snapshot();
     
-    let index = snapshot.bucket_index.as_ref().ok_or_else(|| {
-        ServerError::LaneNotLoaded("Bucket index not loaded".to_string())
+    let cached = snapshot.bucket_index.as_ref().ok_or_else(|| {
+        ServerError::BucketIndexNotLoaded
     })?;
     
     Ok(Json(BucketIndexInfo {
-        total_entries: index.total_entries(),
+        total_entries: cached.total_entries(),
         num_buckets: inspire_client::bucket_index::NUM_BUCKETS,
         block_number: snapshot.block_number,
+        compressed_size: cached.compressed.len(),
     }))
 }
 
@@ -291,6 +313,25 @@ pub struct BucketIndexInfo {
     pub total_entries: u64,
     pub num_buckets: usize,
     pub block_number: Option<u64>,
+    pub compressed_size: usize,
+}
+
+/// Subscribe to bucket index delta updates via WebSocket
+///
+/// Protocol:
+/// 1. Server sends Hello message (JSON): `{"version":1,"block_number":12345}`
+/// 2. Server sends binary BucketDelta messages after each block (~12 sec)
+/// 3. Server responds to Ping with Pong
+/// 4. If client lags, connection is closed with code 4000 and reason "lagged:<block>"
+async fn subscribe_index(
+    ws: WebSocketUpgrade,
+    State(state): State<SharedState>,
+) -> Response {
+    let snapshot = state.load_snapshot();
+    let current_block = snapshot.block_number;
+    ws.on_upgrade(move |socket| {
+        handle_index_subscription(socket, state.bucket_broadcast.clone(), current_block)
+    })
 }
 
 /// Parse lane from URL path
@@ -330,7 +371,9 @@ pub fn create_public_router_with_metrics(
         .route("/query/:lane/seeded", post(query_seeded))
         .route("/query/:lane/seeded/binary", post(query_seeded_binary))
         .route("/index", get(get_bucket_index))
+        .route("/index/raw", get(get_bucket_index_raw))
         .route("/index/info", get(get_bucket_index_info))
+        .route("/index/subscribe", get(subscribe_index))
         .with_state(state);
 
     if let Some(handle) = prometheus_handle {
@@ -371,7 +414,9 @@ pub fn create_router_with_metrics(
         .route("/query/:lane/seeded", post(query_seeded))
         .route("/query/:lane/seeded/binary", post(query_seeded_binary))
         .route("/index", get(get_bucket_index))
+        .route("/index/raw", get(get_bucket_index_raw))
         .route("/index/info", get(get_bucket_index_info))
+        .route("/index/subscribe", get(subscribe_index))
         .route("/admin/reload", post(admin_reload))
         .with_state(state);
 

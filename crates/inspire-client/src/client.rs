@@ -13,6 +13,7 @@ use inspire_pir::params::InspireVariant;
 use inspire_pir::math::GaussianSampler;
 use inspire_pir::rlwe::RlweSecretKey;
 
+use crate::bucket_index::BucketIndex;
 use crate::error::{ClientError, Result};
 
 /// Response from CRS endpoint
@@ -62,6 +63,8 @@ pub struct TwoLaneClient {
     use_seed_expansion: bool,
     /// Use binary responses for ~58% smaller downloads
     use_binary_response: bool,
+    /// Bucket index for sparse lookups (optional, used for cold lane)
+    bucket_index: Option<BucketIndex>,
 }
 
 impl std::fmt::Debug for TwoLaneClient {
@@ -94,6 +97,7 @@ impl TwoLaneClient {
             cold_state: None,
             use_seed_expansion,
             use_binary_response,
+            bucket_index: None,
         }
     }
 
@@ -146,6 +150,50 @@ impl TwoLaneClient {
         
         let crs_resp: CrsResponse = resp.json().await?;
         Ok(crs_resp)
+    }
+
+    /// Fetch and store the bucket index from server
+    ///
+    /// The bucket index enables O(1) index lookups without downloading the full manifest.
+    /// ~150 KB compressed download.
+    pub async fn fetch_bucket_index(&mut self) -> Result<()> {
+        let url = format!("{}/index", self.server_url);
+        let resp = self.http.get(&url).send().await?;
+        
+        if !resp.status().is_success() {
+            return Err(ClientError::Server {
+                status: resp.status().as_u16(),
+                message: resp.text().await.unwrap_or_default(),
+            });
+        }
+        
+        let bytes = resp.bytes().await?;
+        let index = BucketIndex::from_compressed(&bytes)
+            .map_err(|e| ClientError::InvalidResponse(format!("Failed to parse bucket index: {}", e)))?;
+        
+        tracing::info!(
+            total_entries = index.total_entries(),
+            size_kb = bytes.len() / 1024,
+            "Bucket index loaded"
+        );
+        
+        self.bucket_index = Some(index);
+        Ok(())
+    }
+
+    /// Set the bucket index directly (e.g., from local cache)
+    pub fn set_bucket_index(&mut self, index: BucketIndex) {
+        self.bucket_index = Some(index);
+    }
+
+    /// Get the current bucket index
+    pub fn bucket_index(&self) -> Option<&BucketIndex> {
+        self.bucket_index.as_ref()
+    }
+
+    /// Check if bucket index is loaded
+    pub fn has_bucket_index(&self) -> bool {
+        self.bucket_index.is_some()
     }
 
     /// Query a storage slot using PIR
@@ -363,6 +411,34 @@ impl TwoLaneClient {
     /// Get the number of contracts in the hot lane
     pub fn hot_contract_count(&self) -> usize {
         self.router.hot_contract_count()
+    }
+
+    /// Look up bucket range for a contract/slot using the bucket index
+    ///
+    /// Returns (start_index, count) for the bucket containing this entry.
+    /// The client must query within this range to find the exact entry.
+    /// 
+    /// This enables sparse lookups without downloading the full manifest.
+    pub fn lookup_bucket(&self, contract: &Address, slot: &StorageKey) -> Result<crate::BucketRange> {
+        let index = self.bucket_index.as_ref().ok_or_else(|| {
+            ClientError::LaneNotAvailable("Bucket index not loaded".to_string())
+        })?;
+        
+        Ok(index.lookup_bucket(contract, slot))
+    }
+
+    /// Apply a delta update to the bucket index
+    ///
+    /// Called when receiving updates via websocket subscription.
+    pub fn apply_bucket_delta(&mut self, delta: &crate::BucketDelta) {
+        if let Some(ref mut index) = self.bucket_index {
+            index.apply_delta(delta);
+            tracing::debug!(
+                block = delta.block_number,
+                updates = delta.updates.len(),
+                "Applied bucket index delta"
+            );
+        }
     }
 }
 

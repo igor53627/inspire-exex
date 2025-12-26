@@ -13,6 +13,7 @@ use inspire_pir::math::GaussianSampler;
 use inspire_pir::params::{InspireVariant, ShardConfig};
 use inspire_core::PIR_PARAMS_VERSION;
 
+use crate::bucket_index::BucketIndex;
 use crate::console_log;
 use crate::error::PirError;
 use crate::security::{check_webcrypto_available, SecureSecretKey};
@@ -193,6 +194,30 @@ impl PirClient {
         ).map_err(|e| PirError::Pir(e.to_string()))?;
         
         Ok(entry)
+    }
+
+    /// Fetch bucket index from server (512 KB uncompressed)
+    ///
+    /// Returns a BucketIndex for O(1) client-side index lookups.
+    /// Uses /index/raw endpoint which returns uncompressed data for WASM clients.
+    #[wasm_bindgen]
+    pub async fn fetch_bucket_index(&self) -> Result<BucketIndex, JsValue> {
+        let http = HttpClient::new(self.server_url.clone());
+        
+        console_log!("Fetching bucket index...");
+        
+        let bytes = http
+            .get_binary("/index/raw")
+            .await
+            .map_err(PirError::from)?;
+        
+        console_log!("Received {} KB", bytes.len() / 1024);
+        
+        let index = BucketIndex::from_bytes(&bytes)?;
+        
+        console_log!("Bucket index loaded: {} entries", index.total_entries());
+        
+        Ok(index)
     }
 }
 

@@ -47,6 +47,7 @@ mod indexing;
 mod error;
 mod balance;
 mod params;
+pub mod bucket_index;
 
 pub use lane::Lane;
 pub use config::{TwoLaneConfig, PROTOCOL_VERSION};

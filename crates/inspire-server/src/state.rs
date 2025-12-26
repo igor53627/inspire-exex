@@ -18,6 +18,7 @@ use inspire_pir::{
     ClientQuery, EncodedDatabase, MmapDatabase, ServerCrs, ServerResponse,
 };
 
+use crate::broadcast::BucketBroadcast;
 use crate::error::{Result, ServerError};
 
 /// Database storage mode
@@ -129,6 +130,32 @@ impl LaneData {
     }
 }
 
+/// Cached bucket index with precompressed bytes
+///
+/// Stores both the parsed index (for raw endpoint) and precompressed bytes
+/// (for compressed endpoint) to avoid expensive zstd level 19 compression per request.
+pub struct CachedBucketIndex {
+    /// Parsed bucket index for lookups and raw serving
+    pub index: BucketIndex,
+    /// Precompressed bytes (zstd level 19)
+    pub compressed: Vec<u8>,
+}
+
+impl CachedBucketIndex {
+    /// Create cached index from parsed BucketIndex
+    pub fn new(index: BucketIndex) -> Result<Self> {
+        let compressed = index
+            .to_compressed()
+            .map_err(|e| ServerError::Internal(format!("Failed to compress bucket index: {}", e)))?;
+        Ok(Self { index, compressed })
+    }
+
+    /// Total entries in the index
+    pub fn total_entries(&self) -> u64 {
+        self.index.total_entries()
+    }
+}
+
 /// Immutable snapshot of server state
 ///
 /// All queries operate on a cloned Arc of this snapshot, ensuring consistency
@@ -140,8 +167,8 @@ pub struct DbSnapshot {
     pub cold_lane: Option<LaneData>,
     /// Lane router for determining query routing
     pub router: Option<LaneRouter>,
-    /// Bucket index for sparse client lookups
-    pub bucket_index: Option<BucketIndex>,
+    /// Bucket index for sparse client lookups (with precompressed cache)
+    pub bucket_index: Option<CachedBucketIndex>,
     /// Block number this snapshot reflects
     pub block_number: Option<u64>,
     /// PIR params version (from CRS metadata)
@@ -215,6 +242,8 @@ pub struct ServerState {
     pub snapshot: ArcSwap<DbSnapshot>,
     /// Configuration (immutable)
     pub config: TwoLaneConfig,
+    /// Broadcast channel for bucket index deltas
+    pub bucket_broadcast: BucketBroadcast,
 }
 
 impl ServerState {
@@ -231,6 +260,7 @@ impl ServerState {
         Self {
             snapshot: ArcSwap::from(empty_snapshot),
             config,
+            bucket_broadcast: BucketBroadcast::new(),
         }
     }
 
@@ -439,7 +469,7 @@ impl ServerState {
         }
     }
 
-    fn try_load_bucket_index(&self) -> Option<BucketIndex> {
+    fn try_load_bucket_index(&self) -> Option<CachedBucketIndex> {
         let index_path = self.config.bucket_index_path.as_ref()?;
 
         if !index_path.exists() {
@@ -458,12 +488,22 @@ impl ServerState {
 
                 match result {
                     Ok(index) => {
-                        tracing::info!(
-                            path = %index_path.display(),
-                            total_entries = index.total_entries(),
-                            "Bucket index loaded"
-                        );
-                        Some(index)
+                        let total_entries = index.total_entries();
+                        match CachedBucketIndex::new(index) {
+                            Ok(cached) => {
+                                tracing::info!(
+                                    path = %index_path.display(),
+                                    total_entries,
+                                    compressed_size = cached.compressed.len(),
+                                    "Bucket index loaded and precompressed"
+                                );
+                                Some(cached)
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to precompress bucket index: {}", e);
+                                None
+                            }
+                        }
                     }
                     Err(e) => {
                         tracing::warn!("Failed to parse bucket index: {}", e);

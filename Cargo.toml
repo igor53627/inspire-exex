@@ -101,6 +101,9 @@ tracing-subscriber = "0.3"
 # Encoding
 hex = "0.4"
 
+# Hashing
+tiny-keccak = { version = "2.0", features = ["keccak"] }
+
 # Lock-free concurrency
 arc-swap = "1.7"
 

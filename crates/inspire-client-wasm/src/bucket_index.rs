@@ -1,0 +1,151 @@
+//! Bucket Index for WASM client
+//!
+//! Uses 256K buckets (18-bit hash prefix) for O(1) lookup of (address, slot) -> bucket range.
+//! Wraps shared logic from inspire-core with wasm-bindgen annotations.
+
+use inspire_core::bucket_index::{
+    compute_bucket_id, compute_cumulative, BucketDelta as CoreDelta, NUM_BUCKETS,
+};
+use wasm_bindgen::prelude::*;
+
+/// Bucket index for sparse PIR lookups (WASM-compatible)
+#[wasm_bindgen]
+pub struct BucketIndex {
+    counts: Vec<u16>,
+    cumulative: Vec<u64>,
+}
+
+#[wasm_bindgen]
+impl BucketIndex {
+    /// Load bucket index from uncompressed binary (512 KB)
+    /// Use /index/raw endpoint which returns uncompressed data for WASM clients.
+    #[wasm_bindgen(constructor)]
+    pub fn from_bytes(data: &[u8]) -> Result<BucketIndex, JsValue> {
+        if data.len() != NUM_BUCKETS * 2 {
+            return Err(JsValue::from_str(&format!(
+                "Invalid bucket index size: expected {}, got {}",
+                NUM_BUCKETS * 2,
+                data.len()
+            )));
+        }
+
+        let mut counts = Vec::with_capacity(NUM_BUCKETS);
+        for chunk in data.chunks_exact(2) {
+            counts.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+
+        let cumulative = compute_cumulative(&counts);
+
+        Ok(BucketIndex { counts, cumulative })
+    }
+
+    /// Get total number of entries across all buckets
+    #[wasm_bindgen(getter)]
+    pub fn total_entries(&self) -> u64 {
+        self.cumulative[NUM_BUCKETS]
+    }
+
+    /// Look up the bucket range for a (address, slot) pair
+    ///
+    /// Returns [bucket_id, start_index, count]
+    pub fn lookup(&self, address: &[u8], slot: &[u8]) -> Result<Vec<u64>, JsValue> {
+        if address.len() != 20 {
+            return Err(JsValue::from_str("Address must be 20 bytes"));
+        }
+        if slot.len() != 32 {
+            return Err(JsValue::from_str("Slot must be 32 bytes"));
+        }
+
+        let addr: [u8; 20] = address.try_into().unwrap();
+        let sl: [u8; 32] = slot.try_into().unwrap();
+
+        let bucket_id = compute_bucket_id(&addr, &sl);
+        let start = self.cumulative[bucket_id];
+        let count = self.counts[bucket_id] as u64;
+
+        Ok(vec![bucket_id as u64, start, count])
+    }
+
+    /// Get count for a specific bucket
+    pub fn bucket_count(&self, bucket_id: usize) -> u16 {
+        self.counts.get(bucket_id).copied().unwrap_or(0)
+    }
+
+    /// Get start index for a specific bucket
+    pub fn bucket_start(&self, bucket_id: usize) -> u64 {
+        self.cumulative.get(bucket_id).copied().unwrap_or(0)
+    }
+
+    /// Apply a delta update (from websocket)
+    ///
+    /// Delta format: block_num:8 + count:4 + (bucket_id:4 + count:2)*
+    /// Returns the block number from the delta.
+    pub fn apply_delta(&mut self, data: &[u8]) -> Result<u64, JsValue> {
+        let delta = CoreDelta::from_bytes(data).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        for &(bucket_id, new_count) in &delta.updates {
+            if bucket_id < NUM_BUCKETS {
+                self.counts[bucket_id] = new_count;
+            }
+        }
+
+        // Recompute cumulative sums
+        self.cumulative = compute_cumulative(&self.counts);
+
+        Ok(delta.block_number)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn test_bucket_id_deterministic() {
+        let address = [0x42u8; 20];
+        let slot = [0x01u8; 32];
+
+        let id1 = compute_bucket_id(&address, &slot);
+        let id2 = compute_bucket_id(&address, &slot);
+        assert_eq!(id1, id2);
+        assert!(id1 < NUM_BUCKETS);
+    }
+
+    #[wasm_bindgen_test]
+    fn test_bucket_index_from_bytes() {
+        let mut data = vec![0u8; NUM_BUCKETS * 2];
+        data[0] = 10; // bucket 0 = 10
+        data[2] = 5; // bucket 1 = 5
+
+        let index = BucketIndex::from_bytes(&data).unwrap();
+
+        assert_eq!(index.bucket_count(0), 10);
+        assert_eq!(index.bucket_count(1), 5);
+        assert_eq!(index.bucket_start(0), 0);
+        assert_eq!(index.bucket_start(1), 10);
+        assert_eq!(index.bucket_start(2), 15);
+    }
+
+    #[wasm_bindgen_test]
+    fn test_apply_delta() {
+        let mut data = vec![0u8; NUM_BUCKETS * 2];
+        data[0] = 10;
+
+        let mut index = BucketIndex::from_bytes(&data).unwrap();
+        assert_eq!(index.bucket_count(0), 10);
+
+        // Create delta bytes
+        let delta = CoreDelta {
+            block_number: 42,
+            updates: vec![(0, 15)],
+        };
+        let delta_bytes = delta.to_bytes();
+
+        let block = index.apply_delta(&delta_bytes).unwrap();
+        assert_eq!(block, 42);
+        assert_eq!(index.bucket_count(0), 15);
+    }
+}

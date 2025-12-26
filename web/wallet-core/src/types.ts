@@ -138,3 +138,15 @@ export const NETWORK_CHAIN_IDS: Record<string, number> = {
   holesky: 17000,
   sepolia: 11155111,
 };
+
+export interface BucketRange {
+  bucketId: bigint;
+  startIndex: bigint;
+  count: bigint;
+}
+
+export interface BucketIndexInfo {
+  totalEntries: bigint;
+  numBuckets: number;
+  blockNumber?: bigint;
+}

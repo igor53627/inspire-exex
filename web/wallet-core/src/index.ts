@@ -1,5 +1,5 @@
 export { WalletCore, formatEth, formatUsdc } from './wallet-core.js';
-export { PirBalanceClient } from './pir-client.js';
+export { PirBalanceClient, BucketIndexWrapper } from './pir-client.js';
 export { HeliosVerifier } from './helios-verifier.js';
 export type {
   WalletCoreConfig,
@@ -9,6 +9,8 @@ export type {
   VerificationStatus,
   BalanceError,
   SnapshotError,
+  BucketRange,
+  BucketIndexInfo,
 } from './types.js';
 export {
   BALANCE_RECORD_SIZE,

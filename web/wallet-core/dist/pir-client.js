@@ -13,6 +13,39 @@ async function ensureWasmLoaded() {
     await wasmInit;
     return wasmModule;
 }
+/**
+ * WASM BucketIndex wrapper for TypeScript
+ */
+export class BucketIndexWrapper {
+    index;
+    constructor(index) {
+        this.index = index;
+    }
+    get totalEntries() {
+        return BigInt(this.index.total_entries);
+    }
+    /**
+     * Look up bucket range for an (address, slot) pair
+     */
+    lookup(address, slot) {
+        const result = this.index.lookup(address, slot);
+        return {
+            bucketId: BigInt(result[0]),
+            startIndex: BigInt(result[1]),
+            count: BigInt(result[2]),
+        };
+    }
+    /**
+     * Apply a delta update from websocket
+     * @returns Block number the delta applies to
+     */
+    applyDelta(data) {
+        return BigInt(this.index.apply_delta(data));
+    }
+    dispose() {
+        this.index.free();
+    }
+}
 export class PirBalanceClient {
     client = null;
     metadata = null;
@@ -70,6 +103,16 @@ export class PirBalanceClient {
             eth: bytesToBigInt(ethBytes),
             usdc: bytesToBigInt(usdcBytes),
         };
+    }
+    /**
+     * Fetch the bucket index for sparse lookups (~150 KB download)
+     */
+    async fetchBucketIndex() {
+        if (!this.client) {
+            throw new Error('Client not initialized');
+        }
+        const index = await this.client.fetch_bucket_index();
+        return new BucketIndexWrapper(index);
     }
     dispose() {
         if (this.client) {

@@ -661,6 +661,40 @@ async fn test_concurrent_queries_during_reload() {
 }
 
 // ============================================================================
+// Bucket Index Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_bucket_index_endpoint_returns_404_when_not_configured() {
+    let harness = TestHarness::new().await;
+    
+    let resp = harness.http
+        .get(format!("{}/index", harness.server_url))
+        .send()
+        .await
+        .expect("request");
+    
+    // Server may return 500 or 404 depending on implementation when index not loaded
+    let status = resp.status().as_u16();
+    assert!(status >= 400, "Should return error when bucket index not loaded: {}", status);
+}
+
+#[tokio::test]
+async fn test_bucket_index_info_endpoint() {
+    let harness = TestHarness::new().await;
+    
+    let resp = harness.http
+        .get(format!("{}/index/info", harness.server_url))
+        .send()
+        .await
+        .expect("request");
+    
+    // Without bucket index loaded, should return error
+    let status = resp.status().as_u16();
+    assert!(status >= 400, "Should return error when bucket index not loaded: {}", status);
+}
+
+// ============================================================================
 // Load Tests (marked #[ignore] for manual/nightly runs)
 // ============================================================================
 

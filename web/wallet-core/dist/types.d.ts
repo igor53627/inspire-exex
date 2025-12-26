@@ -139,5 +139,15 @@ export type SnapshotError = VerificationError | HashMismatchError | SnapshotInFu
 export type BalanceError = PirQueryError | AddressNotFoundError | SnapshotError;
 export declare const BALANCE_RECORD_SIZE = 64;
 export declare const NETWORK_CHAIN_IDS: Record<string, number>;
+export interface BucketRange {
+    bucketId: bigint;
+    startIndex: bigint;
+    count: bigint;
+}
+export interface BucketIndexInfo {
+    totalEntries: bigint;
+    numBuckets: number;
+    blockNumber?: bigint;
+}
 export {};
 //# sourceMappingURL=types.d.ts.map

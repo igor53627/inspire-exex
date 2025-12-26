@@ -84,4 +84,23 @@ impl HttpClient {
         let bytes = response.binary().await?;
         Ok(bytes)
     }
+
+    pub async fn get_binary(&self, path: &str) -> Result<Vec<u8>, PirError> {
+        let url = format!("{}{}", self.base_url, path);
+        
+        let response = Request::get(&url)
+            .send()
+            .await?;
+        
+        if !response.ok() {
+            return Err(PirError::Network(format!(
+                "HTTP {} from {}",
+                response.status(),
+                url
+            )));
+        }
+        
+        let bytes = response.binary().await?;
+        Ok(bytes)
+    }
 }

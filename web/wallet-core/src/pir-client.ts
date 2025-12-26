@@ -1,4 +1,4 @@
-import type { BalanceMetadata, BALANCE_RECORD_SIZE } from './types.js';
+import type { BalanceMetadata, BucketRange, BucketIndexInfo } from './types.js';
 
 let wasmModule: typeof import('inspire-client-wasm') | null = null;
 let wasmInit: Promise<void> | null = null;
@@ -16,6 +16,45 @@ async function ensureWasmLoaded(): Promise<typeof import('inspire-client-wasm')>
   
   await wasmInit;
   return wasmModule!;
+}
+
+/**
+ * WASM BucketIndex wrapper for TypeScript
+ */
+export class BucketIndexWrapper {
+  private index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>;
+
+  constructor(index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>) {
+    this.index = index;
+  }
+
+  get totalEntries(): bigint {
+    return BigInt(this.index.total_entries);
+  }
+
+  /**
+   * Look up bucket range for an (address, slot) pair
+   */
+  lookup(address: Uint8Array, slot: Uint8Array): BucketRange {
+    const result = this.index.lookup(address, slot);
+    return {
+      bucketId: BigInt(result[0]),
+      startIndex: BigInt(result[1]),
+      count: BigInt(result[2]),
+    };
+  }
+
+  /**
+   * Apply a delta update from websocket
+   * @returns Block number the delta applies to
+   */
+  applyDelta(data: Uint8Array): bigint {
+    return BigInt(this.index.apply_delta(data));
+  }
+
+  dispose(): void {
+    this.index.free();
+  }
 }
 
 export class PirBalanceClient {
@@ -90,6 +129,18 @@ export class PirBalanceClient {
       eth: bytesToBigInt(ethBytes),
       usdc: bytesToBigInt(usdcBytes),
     };
+  }
+
+  /**
+   * Fetch the bucket index for sparse lookups (~512 KB uncompressed from /index/raw)
+   */
+  async fetchBucketIndex(): Promise<BucketIndexWrapper> {
+    if (!this.client) {
+      throw new Error('Client not initialized');
+    }
+    
+    const index = await this.client.fetch_bucket_index();
+    return new BucketIndexWrapper(index);
   }
 
   dispose(): void {

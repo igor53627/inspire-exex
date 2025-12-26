@@ -2,12 +2,24 @@
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
+use serde::Serialize;
 use thiserror::Error;
+
+/// Structured error response for API clients
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub code: &'static str,
+}
 
 #[derive(Error, Debug)]
 pub enum ServerError {
     #[error("Lane not loaded: {0}")]
     LaneNotLoaded(String),
+
+    #[error("Bucket index not loaded")]
+    BucketIndexNotLoaded,
 
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
@@ -42,21 +54,49 @@ pub enum ServerError {
     Internal(String),
 }
 
+impl ServerError {
+    /// Get the error code for structured responses
+    fn code(&self) -> &'static str {
+        match self {
+            ServerError::LaneNotLoaded(_) => "LANE_NOT_LOADED",
+            ServerError::BucketIndexNotLoaded => "BUCKET_INDEX_NOT_LOADED",
+            ServerError::InvalidQuery(_) => "INVALID_QUERY",
+            ServerError::PirError(_) => "PIR_ERROR",
+            ServerError::ConfigMismatch { .. } => "CONFIG_MISMATCH",
+            ServerError::ParamsVersionMismatch { .. } => "PARAMS_VERSION_MISMATCH",
+            ServerError::CrsMetadataNotFound { .. } => "CRS_METADATA_NOT_FOUND",
+            ServerError::Io(_) => "IO_ERROR",
+            ServerError::Json(_) => "JSON_ERROR",
+            ServerError::Internal(_) => "INTERNAL_ERROR",
+        }
+    }
+
+    /// Get the HTTP status code for this error
+    fn status(&self) -> StatusCode {
+        match self {
+            ServerError::LaneNotLoaded(_) => StatusCode::SERVICE_UNAVAILABLE,
+            ServerError::BucketIndexNotLoaded => StatusCode::SERVICE_UNAVAILABLE,
+            ServerError::InvalidQuery(_) => StatusCode::BAD_REQUEST,
+            ServerError::PirError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::ConfigMismatch { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::ParamsVersionMismatch { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::CrsMetadataNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::Json(_) => StatusCode::BAD_REQUEST,
+            ServerError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            ServerError::LaneNotLoaded(_) => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
-            ServerError::InvalidQuery(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            ServerError::PirError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
-            ServerError::ConfigMismatch { .. } => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
-            ServerError::ParamsVersionMismatch { .. } => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
-            ServerError::CrsMetadataNotFound { .. } => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
-            ServerError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
-            ServerError::Json(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            ServerError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+        let status = self.status();
+        let body = ErrorResponse {
+            error: self.to_string(),
+            code: self.code(),
         };
 
-        (status, message).into_response()
+        (status, Json(body)).into_response()
     }
 }
 
