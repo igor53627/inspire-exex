@@ -135,3 +135,62 @@ fn test_has_magic_detection() {
     assert!(!StateHeader::has_magic(b"XXXXabcdefgh"));
     assert!(!StateHeader::has_magic(b"PIR")); // Too short
 }
+
+#[test]
+fn test_known_entry_lookup() {
+    // Create entries with known addresses/slots
+    let known_address: [u8; 20] = [
+        0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23,
+        0xa2, 0x20, 0x62, 0x06, 0x99, 0x45, 0x97, 0xc1,
+        0x3d, 0x83, 0x1e, 0xc7, // USDT address
+    ];
+    let known_slot: [u8; 32] = [0u8; 32]; // slot 0
+    let known_value: [u8; 32] = {
+        let mut v = [0u8; 32];
+        v[31] = 0x42; // some value
+        v
+    };
+    
+    // Create a small database with the known entry plus some others
+    let mut entries = vec![
+        StorageEntry::new(known_address, known_slot, known_value),
+        StorageEntry::new([0x11; 20], [0x01; 32], [0xaa; 32]),
+        StorageEntry::new([0x22; 20], [0x02; 32], [0xbb; 32]),
+    ];
+    
+    // Sort by bucket ID
+    entries.sort_by_key(|e| compute_bucket_id(&e.address, &e.slot));
+    
+    // Build bucket counts (simplified - just count per bucket)
+    let mut bucket_counts = vec![0u16; 262_144];
+    for entry in &entries {
+        let bucket = compute_bucket_id(&entry.address, &entry.slot);
+        bucket_counts[bucket] += 1;
+    }
+    
+    // Compute cumulative sums
+    let cumulative = inspire_core::bucket_index::compute_cumulative(&bucket_counts);
+    
+    // Look up our known entry
+    let target_bucket = compute_bucket_id(&known_address, &known_slot);
+    let start_idx = cumulative[target_bucket] as usize;
+    let count = bucket_counts[target_bucket] as usize;
+    
+    // Verify the entry is in the expected range
+    assert!(count > 0, "Bucket should have at least 1 entry");
+    
+    // Find our entry in the sorted list
+    let found = entries[start_idx..start_idx + count]
+        .iter()
+        .any(|e| e.address == known_address && e.slot == known_slot);
+    
+    assert!(found, "Known entry should be found in bucket range");
+    
+    // Verify the value matches
+    let entry = entries[start_idx..start_idx + count]
+        .iter()
+        .find(|e| e.address == known_address && e.slot == known_slot)
+        .unwrap();
+    
+    assert_eq!(entry.value, known_value);
+}
