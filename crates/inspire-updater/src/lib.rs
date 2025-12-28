@@ -26,7 +26,10 @@ mod state;
 mod writer;
 
 pub use config::UpdaterConfig;
-pub use rpc::{EthrexClient, StorageEntry, DumpStorageResponse, UbtRootResponse, StateDeltaResponse, BlockDeltas};
+pub use rpc::{
+    BlockDeltas, DumpStorageResponse, EthrexClient, StateDeltaResponse, StorageEntry,
+    UbtRootResponse,
+};
 pub use service::{ReloadClient, UpdaterService};
 pub use state::StateTracker;
 pub use writer::ShardWriter;

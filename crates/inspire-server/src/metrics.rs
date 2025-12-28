@@ -14,7 +14,8 @@ pub const OUTCOME_CLIENT_ERROR: &str = "client_error";
 pub const OUTCOME_SERVER_ERROR: &str = "server_error";
 
 pub fn record_pir_request(lane: &str, outcome: &str, duration: Duration) {
-    counter!("pir_requests_total", "lane" => lane.to_string(), "outcome" => outcome.to_string()).increment(1);
+    counter!("pir_requests_total", "lane" => lane.to_string(), "outcome" => outcome.to_string())
+        .increment(1);
     histogram!("pir_request_duration_seconds", "lane" => lane.to_string(), "outcome" => outcome.to_string())
         .record(duration.as_secs_f64());
 }
@@ -40,13 +41,18 @@ pub fn set_lane_mmap_mode(lane: &str, mmap: bool) {
 }
 
 pub fn record_reload(lane: &str, status: &str, duration: Duration) {
-    counter!("pir_reload_total", "lane" => lane.to_string(), "status" => status.to_string()).increment(1);
+    counter!("pir_reload_total", "lane" => lane.to_string(), "status" => status.to_string())
+        .increment(1);
     histogram!("pir_reload_duration_seconds", "lane" => lane.to_string(), "status" => status.to_string())
         .record(duration.as_secs_f64());
 }
 
 pub fn set_reload_in_progress(lane: &str, in_progress: bool) {
-    gauge!("pir_reload_in_progress", "lane" => lane.to_string()).set(if in_progress { 1.0 } else { 0.0 });
+    gauge!("pir_reload_in_progress", "lane" => lane.to_string()).set(if in_progress {
+        1.0
+    } else {
+        0.0
+    });
 }
 
 pub fn set_reload_last_timestamp(lane: &str) {
@@ -60,5 +66,7 @@ pub fn set_reload_last_timestamp(lane: &str) {
 
 pub fn init_prometheus_recorder() -> metrics_exporter_prometheus::PrometheusHandle {
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
-    builder.install_recorder().expect("Failed to install Prometheus recorder")
+    builder
+        .install_recorder()
+        .expect("Failed to install Prometheus recorder")
 }

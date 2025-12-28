@@ -51,7 +51,13 @@ impl HotLaneManifest {
     }
 
     /// Add a contract to the manifest
-    pub fn add_contract(&mut self, address: Address, name: String, slot_count: u64, category: String) {
+    pub fn add_contract(
+        &mut self,
+        address: Address,
+        name: String,
+        slot_count: u64,
+        category: String,
+    ) {
         let start_index = self.total_entries;
         self.contracts.push(HotContract {
             address,
@@ -116,7 +122,9 @@ mod hex_address {
         let s = String::deserialize(deserializer)?;
         let s = s.strip_prefix("0x").unwrap_or(&s);
         let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-        bytes.try_into().map_err(|_| serde::de::Error::custom("invalid address length"))
+        bytes
+            .try_into()
+            .map_err(|_| serde::de::Error::custom("invalid address length"))
     }
 }
 
@@ -134,7 +142,7 @@ mod tests {
     fn test_manifest_add_contract() {
         let mut manifest = HotLaneManifest::new(1000);
         manifest.add_contract(test_address(), "Test".into(), 100, "defi".into());
-        
+
         assert_eq!(manifest.contract_count(), 1);
         assert_eq!(manifest.total_entries, 100);
         assert!(manifest.contains(&test_address()));
@@ -143,13 +151,13 @@ mod tests {
     #[test]
     fn test_manifest_indexing() {
         let mut manifest = HotLaneManifest::new(1000);
-        
+
         let addr1 = [1u8; 20];
         let addr2 = [2u8; 20];
-        
+
         manifest.add_contract(addr1, "Contract1".into(), 100, "defi".into());
         manifest.add_contract(addr2, "Contract2".into(), 200, "token".into());
-        
+
         assert_eq!(manifest.contracts[0].start_index, 0);
         assert_eq!(manifest.contracts[1].start_index, 100);
         assert_eq!(manifest.total_entries, 300);
@@ -159,10 +167,10 @@ mod tests {
     fn test_address_serialization() {
         let mut manifest = HotLaneManifest::new(1000);
         manifest.add_contract([0xdeu8; 20], "Test".into(), 50, "token".into());
-        
+
         let json = serde_json::to_string(&manifest).unwrap();
         assert!(json.contains("0xdededede"));
-        
+
         let parsed: HotLaneManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.contracts[0].address, [0xdeu8; 20]);
     }

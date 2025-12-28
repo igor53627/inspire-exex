@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use lane_builder::ReloadClient;
 use lane_builder::reload::ReloadResult;
+use lane_builder::ReloadClient;
 
 mod mock_server {
     use axum::{extract::State, routing::post, Router};
@@ -53,7 +53,11 @@ mod mock_server {
         let new_block = state.current_block.fetch_add(1, Ordering::SeqCst) + 1;
 
         axum::Json(lane_builder::reload::ReloadResult {
-            old_block_number: if count == 0 { None } else { Some(new_block - 1) },
+            old_block_number: if count == 0 {
+                None
+            } else {
+                Some(new_block - 1)
+            },
             new_block_number: Some(new_block),
             reload_duration_ms: 5,
             hot_loaded: true,
@@ -147,9 +151,7 @@ async fn test_concurrent_reloads() {
     let mut handles = vec![];
     for _ in 0..10 {
         let c = client.clone();
-        handles.push(tokio::spawn(async move {
-            c.reload().await
-        }));
+        handles.push(tokio::spawn(async move { c.reload().await }));
     }
 
     let mut successes = 0;

@@ -11,10 +11,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() < 3 {
         eprintln!("Usage: {} <server_url> <contract_address> [slot]", args[0]);
-        eprintln!("Example: {} http://localhost:3000 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 0x00", args[0]);
+        eprintln!(
+            "Example: {} http://localhost:3000 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 0x00",
+            args[0]
+        );
         std::process::exit(1);
     }
 
@@ -26,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let slot = parse_slot(slot_hex)?;
 
     let manifest_path = PathBuf::from("./pir-data/hot/manifest.json");
-    
+
     let mut client = ClientBuilder::new(server_url)
         .manifest(&manifest_path)
         .build()?;
@@ -40,16 +43,18 @@ async fn main() -> anyhow::Result<()> {
     );
 
     client.init().await?;
-    
+
     let _result = client.query(contract, slot).await?;
-    
+
     Ok(())
 }
 
 fn parse_address(hex: &str) -> anyhow::Result<[u8; 20]> {
     let hex = hex.strip_prefix("0x").unwrap_or(hex);
     let bytes = hex::decode(hex)?;
-    bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid address length"))
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid address length"))
 }
 
 fn parse_slot(hex: &str) -> anyhow::Result<[u8; 32]> {
@@ -59,5 +64,7 @@ fn parse_slot(hex: &str) -> anyhow::Result<[u8; 32]> {
         return Err(anyhow::anyhow!("Slot too long"));
     }
     bytes.resize(32, 0);
-    bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid slot length"))
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid slot length"))
 }

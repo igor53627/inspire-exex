@@ -37,7 +37,7 @@ pub fn slot_to_offset(slot: &StorageKey, num_slots: u64) -> Option<u64> {
     if num_slots == 0 {
         return None;
     }
-    
+
     let hash = hash_slot(slot);
     Some(hash % num_slots)
 }
@@ -74,7 +74,7 @@ pub fn cold_index(contract: &Address, slot: &StorageKey, total_entries: u64) -> 
     if total_entries == 0 {
         return None;
     }
-    
+
     let hash = hash_contract_slot(contract, slot);
     Some(hash % total_entries)
 }
@@ -85,22 +85,22 @@ pub fn cold_index(contract: &Address, slot: &StorageKey, total_entries: u64) -> 
 /// We mix all 32 bytes through a series of multiply-rotate-xor operations.
 fn hash_slot(slot: &StorageKey) -> u64 {
     let mut h: u64 = 0x517cc1b727220a95; // Seed constant
-    
+
     for chunk in slot.chunks(8) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
         let val = u64::from_le_bytes(bytes);
-        
+
         h = h.wrapping_add(val);
         h = h.rotate_left(13);
         h ^= h >> 7;
         h = h.wrapping_mul(0x9e3779b97f4a7c15);
     }
-    
+
     h ^= h >> 33;
     h = h.wrapping_mul(0xff51afd7ed558ccd);
     h ^= h >> 33;
-    
+
     h
 }
 
@@ -109,35 +109,35 @@ fn hash_slot(slot: &StorageKey) -> u64 {
 /// Combines the contract address and slot into a single hash value.
 fn hash_contract_slot(contract: &Address, slot: &StorageKey) -> u64 {
     let mut h: u64 = 0x9e3779b97f4a7c15; // Different seed for cold lane
-    
+
     // Mix in contract address (20 bytes = 2.5 chunks of 8)
     for chunk in contract.chunks(8) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
         let val = u64::from_le_bytes(bytes);
-        
+
         h = h.wrapping_add(val);
         h = h.rotate_left(17);
         h ^= h >> 11;
         h = h.wrapping_mul(0x517cc1b727220a95);
     }
-    
+
     // Mix in slot (32 bytes = 4 chunks of 8)
     for chunk in slot.chunks(8) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
         let val = u64::from_le_bytes(bytes);
-        
+
         h = h.wrapping_add(val);
         h = h.rotate_left(13);
         h ^= h >> 7;
         h = h.wrapping_mul(0x9e3779b97f4a7c15);
     }
-    
+
     h ^= h >> 33;
     h = h.wrapping_mul(0xff51afd7ed558ccd);
     h ^= h >> 33;
-    
+
     h
 }
 
@@ -158,7 +158,12 @@ mod tests {
         let slot = [0xffu8; 32];
         for num_slots in [1, 100, 1000, 1_000_000] {
             let offset = slot_to_offset(&slot, num_slots).unwrap();
-            assert!(offset < num_slots, "offset {} should be < {}", offset, num_slots);
+            assert!(
+                offset < num_slots,
+                "offset {} should be < {}",
+                offset,
+                num_slots
+            );
         }
     }
 
@@ -173,11 +178,14 @@ mod tests {
         let slot1 = [0x01u8; 32];
         let slot2 = [0x02u8; 32];
         let num_slots = 1_000_000;
-        
+
         let offset1 = slot_to_offset(&slot1, num_slots).unwrap();
         let offset2 = slot_to_offset(&slot2, num_slots).unwrap();
-        
-        assert_ne!(offset1, offset2, "Different slots should likely have different offsets");
+
+        assert_ne!(
+            offset1, offset2,
+            "Different slots should likely have different offsets"
+        );
     }
 
     #[test]
@@ -185,10 +193,10 @@ mod tests {
         let slot = [0x42u8; 32];
         let start_index = 5000;
         let num_slots = 1000;
-        
+
         let idx = hot_index(start_index, &slot, num_slots).unwrap();
         let offset = slot_to_offset(&slot, num_slots).unwrap();
-        
+
         assert_eq!(idx, start_index + offset);
         assert!(idx >= start_index);
         assert!(idx < start_index + num_slots);
@@ -205,10 +213,10 @@ mod tests {
         let contract = [0x11u8; 20];
         let slot = [0x22u8; 32];
         let total = 2_700_000_000u64;
-        
+
         let idx1 = cold_index(&contract, &slot, total);
         let idx2 = cold_index(&contract, &slot, total);
-        
+
         assert_eq!(idx1, idx2, "Must be deterministic");
     }
 
@@ -216,7 +224,7 @@ mod tests {
     fn test_cold_index_bounded() {
         let contract = [0xffu8; 20];
         let slot = [0xffu8; 32];
-        
+
         for total in [1, 1000, 1_000_000, 2_700_000_000] {
             let idx = cold_index(&contract, &slot, total).unwrap();
             assert!(idx < total, "index {} should be < {}", idx, total);
@@ -236,11 +244,14 @@ mod tests {
         let contract2 = [0x22u8; 20];
         let slot = [0x33u8; 32];
         let total = 1_000_000_000u64;
-        
+
         let idx1 = cold_index(&contract1, &slot, total).unwrap();
         let idx2 = cold_index(&contract2, &slot, total).unwrap();
-        
-        assert_ne!(idx1, idx2, "Different contracts should likely have different indices");
+
+        assert_ne!(
+            idx1, idx2,
+            "Different contracts should likely have different indices"
+        );
     }
 
     #[test]
@@ -248,22 +259,25 @@ mod tests {
         let num_slots = 100u64;
         let num_samples = 10_000;
         let mut buckets = vec![0u64; num_slots as usize];
-        
+
         for i in 0..num_samples {
             let mut slot = [0u8; 32];
             slot[0..8].copy_from_slice(&(i as u64).to_le_bytes());
             let offset = slot_to_offset(&slot, num_slots).unwrap();
             buckets[offset as usize] += 1;
         }
-        
+
         let expected = num_samples / num_slots;
         let tolerance = expected / 2;
-        
+
         for (i, &count) in buckets.iter().enumerate() {
             assert!(
                 count >= expected - tolerance && count <= expected + tolerance,
                 "Bucket {} has {} entries, expected ~{} (+/- {})",
-                i, count, expected, tolerance
+                i,
+                count,
+                expected,
+                tolerance
             );
         }
     }

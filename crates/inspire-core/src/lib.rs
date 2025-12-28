@@ -39,28 +39,27 @@
 //!
 //! For full threat model details, see the project README.
 
-mod lane;
-mod config;
-mod manifest;
-mod routing;
-mod indexing;
-mod error;
 mod balance;
-mod params;
 pub mod bucket_index;
+mod config;
+mod error;
+mod indexing;
+mod lane;
+mod manifest;
+mod params;
+mod routing;
 pub mod state_format;
 
-pub use lane::Lane;
+pub use balance::{BalanceDbMetadata, BalanceRecord, BALANCE_RECORD_SIZE};
 pub use config::{TwoLaneConfig, PROTOCOL_VERSION};
-pub use manifest::{HotLaneManifest, HotContract};
-pub use routing::{LaneRouter, QueryTarget, RoutedQuery};
-pub use indexing::{slot_to_offset, hot_index, cold_index};
 pub use error::Error;
-pub use balance::{BalanceRecord, BalanceDbMetadata, BALANCE_RECORD_SIZE};
-pub use params::{PIR_PARAMS_VERSION, PIR_PARAMS, PirParams, CrsMetadata, ParamsVersionError};
+pub use indexing::{cold_index, hot_index, slot_to_offset};
+pub use lane::Lane;
+pub use manifest::{HotContract, HotLaneManifest};
+pub use params::{CrsMetadata, ParamsVersionError, PirParams, PIR_PARAMS, PIR_PARAMS_VERSION};
+pub use routing::{LaneRouter, QueryTarget, RoutedQuery};
 pub use state_format::{
-    StateHeader, StorageEntry, StateFormatError,
-    STATE_MAGIC, STATE_HEADER_SIZE, STATE_ENTRY_SIZE,
+    StateFormatError, StateHeader, StorageEntry, STATE_ENTRY_SIZE, STATE_HEADER_SIZE, STATE_MAGIC,
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -78,16 +77,16 @@ pub type StorageValue = [u8; 32];
 pub mod constants {
     /// Entry size in bytes (Ethereum storage slot)
     pub const ENTRY_SIZE: usize = 32;
-    
+
     /// Target hot lane size (~1M entries)
     pub const HOT_LANE_TARGET_ENTRIES: u64 = 1_000_000;
-    
+
     /// Approximate number of top contracts in hot lane
     pub const HOT_LANE_CONTRACT_COUNT: usize = 1_000;
-    
+
     /// Expected hot lane query size in bytes
     pub const HOT_LANE_QUERY_SIZE: usize = 10_000;
-    
+
     /// Expected cold lane query size in bytes
     pub const COLD_LANE_QUERY_SIZE: usize = 500_000;
 }

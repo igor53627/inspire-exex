@@ -48,11 +48,9 @@ fn main() -> Result<()> {
     let _guard = RethTracer::new().init()?;
 
     Cli::parse_args().run(|builder, _args| {
-        let exex_args = LaneExExArgs::parse_from(
-            std::env::args().filter(|arg| {
-                arg.starts_with("--pir") || arg.starts_with("--reload") || !arg.starts_with("--")
-            })
-        );
+        let exex_args = LaneExExArgs::parse_from(std::env::args().filter(|arg| {
+            arg.starts_with("--pir") || arg.starts_with("--reload") || !arg.starts_with("--")
+        }));
 
         let config = LaneUpdaterConfig {
             server_url: exex_args.pir_server_url,

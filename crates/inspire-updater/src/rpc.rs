@@ -145,8 +145,11 @@ impl EthrexClient {
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<StateDeltaResponse> {
-        self.rpc_call("pir_getStateDelta", serde_json::json!([from_block, to_block]))
-            .await
+        self.rpc_call(
+            "pir_getStateDelta",
+            serde_json::json!([from_block, to_block]),
+        )
+        .await
     }
 
     /// Iterate all storage entries

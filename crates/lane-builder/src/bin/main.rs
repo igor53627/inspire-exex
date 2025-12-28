@@ -10,11 +10,12 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    
-    let output_dir = args.get(1).map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from("./pir-data/hot")
-    });
-    
+
+    let output_dir = args
+        .get(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("./pir-data/hot"));
+
     let block_number: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
 
     tracing::info!(

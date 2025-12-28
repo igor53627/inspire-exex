@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::contracts::{ContractInfo, HOT_CONTRACTS, KnownContract};
+use crate::contracts::{ContractInfo, KnownContract, HOT_CONTRACTS};
 
 #[cfg(feature = "backfill")]
 use crate::gas_tracker::BackfillResult;
@@ -109,10 +109,8 @@ pub struct HybridScorer {
 
 impl HybridScorer {
     pub fn new(config: HybridScorerConfig) -> Self {
-        let known_contracts: HashMap<[u8; 20], &'static KnownContract> = HOT_CONTRACTS
-            .iter()
-            .map(|c| (c.address, c))
-            .collect();
+        let known_contracts: HashMap<[u8; 20], &'static KnownContract> =
+            HOT_CONTRACTS.iter().map(|c| (c.address, c)).collect();
 
         Self {
             config,
@@ -143,37 +141,45 @@ impl HybridScorer {
                 .map(|c| self.config.category_weights.get(c))
                 .unwrap_or(1.0);
 
-            let final_score = self.calculate_score(stats.total_gas, priority_boost, category_weight);
+            let final_score =
+                self.calculate_score(stats.total_gas, priority_boost, category_weight);
 
-            scored.insert(stats.address, ScoredContract {
-                address: stats.address,
-                name,
-                category,
-                gas_score: stats.total_gas,
-                priority_boost,
-                category_weight,
-                final_score,
-                tx_count: stats.tx_count,
-                source,
-            });
+            scored.insert(
+                stats.address,
+                ScoredContract {
+                    address: stats.address,
+                    name,
+                    category,
+                    gas_score: stats.total_gas,
+                    priority_boost,
+                    category_weight,
+                    final_score,
+                    tx_count: stats.tx_count,
+                    source,
+                },
+            );
         }
 
         for (addr, kc) in &self.known_contracts {
             if !scored.contains_key(addr) {
                 let category_weight = self.config.category_weights.get(kc.category);
-                let final_score = self.calculate_score(0, self.config.known_contract_boost, category_weight);
+                let final_score =
+                    self.calculate_score(0, self.config.known_contract_boost, category_weight);
 
-                scored.insert(*addr, ScoredContract {
-                    address: *addr,
-                    name: Some(kc.name.to_string()),
-                    category: Some(kc.category.to_string()),
-                    gas_score: 0,
-                    priority_boost: self.config.known_contract_boost,
-                    category_weight,
-                    final_score,
-                    tx_count: 0,
-                    source: ContractSource::KnownList,
-                });
+                scored.insert(
+                    *addr,
+                    ScoredContract {
+                        address: *addr,
+                        name: Some(kc.name.to_string()),
+                        category: Some(kc.category.to_string()),
+                        gas_score: 0,
+                        priority_boost: self.config.known_contract_boost,
+                        category_weight,
+                        final_score,
+                        tx_count: 0,
+                        source: ContractSource::KnownList,
+                    },
+                );
             }
         }
 
@@ -190,7 +196,8 @@ impl HybridScorer {
             .iter()
             .map(|(addr, kc)| {
                 let category_weight = self.config.category_weights.get(kc.category);
-                let final_score = self.calculate_score(0, self.config.known_contract_boost, category_weight);
+                let final_score =
+                    self.calculate_score(0, self.config.known_contract_boost, category_weight);
 
                 ScoredContract {
                     address: *addr,
@@ -226,8 +233,14 @@ impl ScoredContract {
     pub fn to_contract_info(&self) -> ContractInfo {
         ContractInfo {
             address: self.address,
-            name: self.name.clone().unwrap_or_else(|| format!("0x{}", hex::encode(&self.address[..6]))),
-            category: self.category.clone().unwrap_or_else(|| "unknown".to_string()),
+            name: self
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("0x{}", hex::encode(&self.address[..6]))),
+            category: self
+                .category
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
             tx_count: Some(self.tx_count),
             storage_slots: None,
         }
@@ -252,7 +265,9 @@ mod hex_address {
         let s = String::deserialize(deserializer)?;
         let s = s.strip_prefix("0x").unwrap_or(&s);
         let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-        bytes.try_into().map_err(|_| serde::de::Error::custom("invalid address length"))
+        bytes
+            .try_into()
+            .map_err(|_| serde::de::Error::custom("invalid address length"))
     }
 }
 
@@ -278,7 +293,10 @@ mod tests {
             assert!(s.name.is_some());
         }
 
-        let privacy: Vec<_> = scored.iter().filter(|s| s.category.as_deref() == Some("privacy")).collect();
+        let privacy: Vec<_> = scored
+            .iter()
+            .filter(|s| s.category.as_deref() == Some("privacy"))
+            .collect();
         assert!(!privacy.is_empty());
         assert!(privacy[0].final_score > scored.last().unwrap().final_score);
     }

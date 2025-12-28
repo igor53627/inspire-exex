@@ -114,10 +114,8 @@ impl GasTracker {
     }
 
     pub async fn backfill(&self) -> anyhow::Result<BackfillResult> {
-        let provider = ProviderBuilder::new()
-            .connect(&self.rpc_url)
-            .await?;
-        
+        let provider = ProviderBuilder::new().connect(&self.rpc_url).await?;
+
         let latest = provider.get_block_number().await?;
         let start_block = latest.saturating_sub(self.config.block_count);
         let end_block = latest;
@@ -159,9 +157,11 @@ impl GasTracker {
                         warn!("Failed to connect to RPC");
                         return;
                     };
-                    
+
                     for block_num in batch {
-                        if let Err(e) = Self::process_block(&provider, &gas_map, &total_txs, block_num).await {
+                        if let Err(e) =
+                            Self::process_block(&provider, &gas_map, &total_txs, block_num).await
+                        {
                             warn!(block = block_num, error = %e, "Failed to process block");
                         }
                         pb.inc(1);

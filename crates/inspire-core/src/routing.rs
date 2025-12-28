@@ -1,7 +1,7 @@
 //! Lane routing: determines which lane handles a query
 
+use crate::indexing::{cold_index, hot_index};
 use crate::{Address, HotLaneManifest, Lane, StorageKey};
-use crate::indexing::{hot_index, cold_index};
 use std::collections::HashSet;
 
 /// Routes queries to the appropriate lane based on contract address
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_routing() {
         let router = LaneRouter::new(create_test_manifest());
-        
+
         assert_eq!(router.route(&[0x11u8; 20]), Lane::Hot);
         assert_eq!(router.route(&[0x22u8; 20]), Lane::Hot);
         assert_eq!(router.route(&[0x33u8; 20]), Lane::Cold);
@@ -130,19 +130,19 @@ mod tests {
     fn test_hot_index_with_slot() {
         let router = LaneRouter::new(create_test_manifest());
         let slot = [0x42u8; 32];
-        
+
         // First contract (USDC): start_index=0, slot_count=1000
         let idx1 = router.get_hot_index(&[0x11u8; 20], &slot).unwrap();
         let expected_offset = slot_to_offset(&slot, 1000).unwrap();
         assert_eq!(idx1, expected_offset);
         assert!(idx1 < 1000, "should be within USDC's range");
-        
+
         // Second contract (WETH): start_index=1000, slot_count=500
         let idx2 = router.get_hot_index(&[0x22u8; 20], &slot).unwrap();
         let expected_offset2 = slot_to_offset(&slot, 500).unwrap();
         assert_eq!(idx2, 1000 + expected_offset2);
         assert!(idx2 >= 1000 && idx2 < 1500, "should be within WETH's range");
-        
+
         // Non-existent contract returns None
         assert_eq!(router.get_hot_index(&[0x33u8; 20], &slot), None);
     }
@@ -153,13 +153,16 @@ mod tests {
         let slot1 = [0x01u8; 32];
         let slot2 = [0x02u8; 32];
         let contract = [0x11u8; 20];
-        
+
         let idx1 = router.get_hot_index(&contract, &slot1).unwrap();
         let idx2 = router.get_hot_index(&contract, &slot2).unwrap();
-        
+
         // Different slots should (likely) produce different indices
-        assert_ne!(idx1, idx2, "Different slots should map to different indices");
-        
+        assert_ne!(
+            idx1, idx2,
+            "Different slots should map to different indices"
+        );
+
         // Both should be within the contract's range
         assert!(idx1 < 1000);
         assert!(idx2 < 1000);
@@ -170,10 +173,10 @@ mod tests {
         let router = LaneRouter::with_cold_entries(create_test_manifest(), 2_700_000_000);
         let contract = [0x33u8; 20];
         let slot = [0x44u8; 32];
-        
+
         let idx = router.get_cold_index(&contract, &slot).unwrap();
         assert!(idx < 2_700_000_000, "should be within cold lane range");
-        
+
         // Deterministic
         let idx2 = router.get_cold_index(&contract, &slot).unwrap();
         assert_eq!(idx, idx2);
@@ -184,7 +187,7 @@ mod tests {
         let router = LaneRouter::new(create_test_manifest());
         let contract = [0x33u8; 20];
         let slot = [0x44u8; 32];
-        
+
         // Should return None when cold_total_entries is 0
         assert_eq!(router.get_cold_index(&contract, &slot), None);
     }
@@ -192,11 +195,11 @@ mod tests {
     #[test]
     fn test_cold_index_different_inputs() {
         let router = LaneRouter::with_cold_entries(create_test_manifest(), 1_000_000_000);
-        
+
         let idx1 = router.get_cold_index(&[0x11u8; 20], &[0x22u8; 32]).unwrap();
         let idx2 = router.get_cold_index(&[0x33u8; 20], &[0x22u8; 32]).unwrap();
         let idx3 = router.get_cold_index(&[0x11u8; 20], &[0x44u8; 32]).unwrap();
-        
+
         // Different inputs should produce different indices (with high probability)
         assert_ne!(idx1, idx2);
         assert_ne!(idx1, idx3);

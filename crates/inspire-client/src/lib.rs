@@ -7,6 +7,6 @@ pub mod bucket_index;
 pub mod client;
 pub mod error;
 
-pub use bucket_index::{BucketIndex, BucketRange, BucketDelta, compute_bucket_id};
+pub use bucket_index::{compute_bucket_id, BucketDelta, BucketIndex, BucketRange};
 pub use client::TwoLaneClient;
 pub use error::ClientError;

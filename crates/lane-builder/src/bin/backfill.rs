@@ -99,7 +99,10 @@ async fn main() -> anyhow::Result<()> {
 
     let scored_json = serde_json::to_string_pretty(&scored)?;
     std::fs::write(&args.scored_output, scored_json)?;
-    println!("Scored contracts saved to: {}", args.scored_output.display());
+    println!(
+        "Scored contracts saved to: {}",
+        args.scored_output.display()
+    );
 
     println!();
     println!("Top 20 Gas Guzzlers (Hybrid Ranked)");

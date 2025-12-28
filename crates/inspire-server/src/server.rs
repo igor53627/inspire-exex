@@ -15,7 +15,9 @@ use inspire_core::TwoLaneConfig;
 use tokio::net::TcpListener;
 
 use crate::error::Result;
-use crate::routes::{create_admin_router, create_public_router_with_metrics, create_router_with_metrics};
+use crate::routes::{
+    create_admin_router, create_public_router_with_metrics, create_router_with_metrics,
+};
 use crate::state::{create_shared_state, SharedState};
 
 /// Rate limiter state for admin endpoints
@@ -37,7 +39,7 @@ impl RateLimiter {
         let now = Instant::now().elapsed().as_millis() as u64;
         let last = self.last_request.load(Ordering::Relaxed);
         let min_ms = self.min_interval.as_millis() as u64;
-        
+
         if now.saturating_sub(last) >= min_ms {
             self.last_request.store(now, Ordering::Relaxed);
             true
@@ -73,9 +75,17 @@ pub struct TwoLaneServer {
 
 impl TwoLaneServer {
     /// Create a new server with the given configuration
-    pub fn new(config: TwoLaneConfig, public_addr: SocketAddr, admin_addr: Option<SocketAddr>) -> Self {
+    pub fn new(
+        config: TwoLaneConfig,
+        public_addr: SocketAddr,
+        admin_addr: Option<SocketAddr>,
+    ) -> Self {
         let state = create_shared_state(config);
-        Self { state, public_addr, admin_addr }
+        Self {
+            state,
+            public_addr,
+            admin_addr,
+        }
     }
 
     /// Load both lanes from disk
@@ -109,12 +119,13 @@ impl TwoLaneServer {
     /// Run with separate public and admin listeners
     async fn run_dual(self) -> Result<()> {
         let admin_addr = self.admin_addr.expect("admin_addr required for dual mode");
-        
+
         let public_router = create_public_router_with_metrics(self.state.clone(), None);
-        
+
         let rate_limiter = RateLimiter::new(Duration::from_secs(1));
-        let admin_router = create_admin_router(self.state.clone())
-            .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware));
+        let admin_router = create_admin_router(self.state.clone()).layer(
+            middleware::from_fn_with_state(rate_limiter, rate_limit_middleware),
+        );
 
         tracing::info!("Starting public PIR server on {}", self.public_addr);
         tracing::info!("Starting admin server on {} (localhost only)", admin_addr);
@@ -122,13 +133,11 @@ impl TwoLaneServer {
         let public_listener = TcpListener::bind(self.public_addr).await?;
         let admin_listener = TcpListener::bind(admin_addr).await?;
 
-        let public_handle = tokio::spawn(async move {
-            axum::serve(public_listener, public_router).await
-        });
+        let public_handle =
+            tokio::spawn(async move { axum::serve(public_listener, public_router).await });
 
-        let admin_handle = tokio::spawn(async move {
-            axum::serve(admin_listener, admin_router).await
-        });
+        let admin_handle =
+            tokio::spawn(async move { axum::serve(admin_listener, admin_router).await });
 
         tokio::select! {
             res = public_handle => {
@@ -179,7 +188,7 @@ impl ServerBuilder {
     }
 
     /// Set admin port (binds to 127.0.0.1 only for security)
-    /// 
+    ///
     /// When set, admin endpoints (/admin/*) are served on a separate
     /// listener bound to localhost, providing network isolation.
     pub fn admin_port(mut self, port: u16) -> Self {

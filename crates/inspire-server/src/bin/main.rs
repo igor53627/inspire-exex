@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    
+
     let config_path = args.get(1).map(PathBuf::from);
     let port: u16 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3000);
     let admin_port: Option<u16> = args.get(3).and_then(|s| s.parse().ok());
@@ -32,10 +32,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut builder = ServerBuilder::new(config).port(port);
-    
+
     if let Some(admin_port) = admin_port {
         builder = builder.admin_port(admin_port);
-        tracing::info!("Admin endpoints on 127.0.0.1:{} (rate limited: 1 req/sec)", admin_port);
+        tracing::info!(
+            "Admin endpoints on 127.0.0.1:{} (rate limited: 1 req/sec)",
+            admin_port
+        );
     }
 
     let server = builder.build()?;

@@ -5,13 +5,13 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use inspire_pir::{
-    query_seeded as pir_query_seeded, extract_with_variant,
-    SeededClientQuery, ServerCrs, ServerResponse,
-};
+use inspire_core::PIR_PARAMS_VERSION;
 use inspire_pir::math::GaussianSampler;
 use inspire_pir::params::{InspireVariant, ShardConfig};
-use inspire_core::PIR_PARAMS_VERSION;
+use inspire_pir::{
+    extract_with_variant, query_seeded as pir_query_seeded, SeededClientQuery, ServerCrs,
+    ServerResponse,
+};
 
 use crate::bucket_index::BucketIndex;
 use crate::console_log;
@@ -69,40 +69,38 @@ impl PirClient {
     #[wasm_bindgen]
     pub async fn init(&mut self, lane: &str) -> Result<(), JsValue> {
         check_webcrypto_available()?;
-        
+
         let http = HttpClient::new(self.server_url.clone());
-        
+
         console_log!("Checking server PIR params version...");
-        let info: ServerInfo = http
-            .get("/info")
-            .await
-            .map_err(PirError::from)?;
+        let info: ServerInfo = http.get("/info").await.map_err(PirError::from)?;
 
         if info.pir_params_version != PIR_PARAMS_VERSION {
             return Err(PirError::VersionMismatch {
                 client: PIR_PARAMS_VERSION,
                 server: info.pir_params_version,
-            }.into());
+            }
+            .into());
         }
 
         console_log!("Version check passed: v{}", PIR_PARAMS_VERSION);
         console_log!("Fetching CRS for lane: {}", lane);
-        
+
         let crs_resp: CrsResponse = http
             .get(&format!("/crs/{}", lane))
             .await
             .map_err(PirError::from)?;
-        
+
         let crs: ServerCrs = serde_json::from_str(&crs_resp.crs)
             .map_err(|e| PirError::Serialization(e.to_string()))?;
-        
+
         console_log!("Generating secret key...");
         let mut sampler = GaussianSampler::new(crs.params.sigma);
         let raw_key = inspire_pir::rlwe::RlweSecretKey::generate(&crs.params, &mut sampler);
         let secret_key = SecureSecretKey::new(raw_key);
-        
+
         console_log!("Client initialized: {} entries", crs_resp.entry_count);
-        
+
         self.inner = Some(ClientInner {
             http,
             crs,
@@ -111,7 +109,7 @@ impl PirClient {
             shard_config: crs_resp.shard_config,
             lane: lane.to_string(),
         });
-        
+
         Ok(())
     }
 
@@ -124,13 +122,13 @@ impl PirClient {
     #[wasm_bindgen]
     pub async fn query(&self, index: u64) -> Result<Vec<u8>, JsValue> {
         let inner = self.inner.as_ref().ok_or(PirError::NotInitialized)?;
-        
+
         if index >= inner.entry_count {
             return Err(PirError::IndexOutOfBounds(index).into());
         }
-        
+
         console_log!("Building PIR query for index {}", index);
-        
+
         let mut sampler = GaussianSampler::new(inner.crs.params.sigma);
         let (client_state, seeded_query) = pir_query_seeded(
             &inner.crs,
@@ -138,36 +136,44 @@ impl PirClient {
             &inner.shard_config,
             inner.secret_key.as_ref(),
             &mut sampler,
-        ).map_err(|e| PirError::Pir(e.to_string()))?;
-        
+        )
+        .map_err(|e| PirError::Pir(e.to_string()))?;
+
         console_log!("Sending seeded query...");
-        
-        let response: QueryResponse = inner.http
-            .post_json(&format!("/query/{}/seeded", inner.lane), &SeededQueryRequest { query: seeded_query })
+
+        let response: QueryResponse = inner
+            .http
+            .post_json(
+                &format!("/query/{}/seeded", inner.lane),
+                &SeededQueryRequest {
+                    query: seeded_query,
+                },
+            )
             .await
             .map_err(PirError::from)?;
-        
+
         console_log!("Extracting result...");
-        
+
         let entry = extract_with_variant(
             &inner.crs,
             &client_state,
             &response.response,
             64,
             InspireVariant::OnePacking,
-        ).map_err(|e| PirError::Pir(e.to_string()))?;
-        
+        )
+        .map_err(|e| PirError::Pir(e.to_string()))?;
+
         Ok(entry)
     }
 
     #[wasm_bindgen]
     pub async fn query_binary(&self, index: u64) -> Result<Vec<u8>, JsValue> {
         let inner = self.inner.as_ref().ok_or(PirError::NotInitialized)?;
-        
+
         if index >= inner.entry_count {
             return Err(PirError::IndexOutOfBounds(index).into());
         }
-        
+
         let mut sampler = GaussianSampler::new(inner.crs.params.sigma);
         let (client_state, seeded_query) = pir_query_seeded(
             &inner.crs,
@@ -175,24 +181,32 @@ impl PirClient {
             &inner.shard_config,
             inner.secret_key.as_ref(),
             &mut sampler,
-        ).map_err(|e| PirError::Pir(e.to_string()))?;
-        
-        let bytes = inner.http
-            .post_json_binary(&format!("/query/{}/seeded/binary", inner.lane), &SeededQueryRequest { query: seeded_query })
+        )
+        .map_err(|e| PirError::Pir(e.to_string()))?;
+
+        let bytes = inner
+            .http
+            .post_json_binary(
+                &format!("/query/{}/seeded/binary", inner.lane),
+                &SeededQueryRequest {
+                    query: seeded_query,
+                },
+            )
             .await
             .map_err(PirError::from)?;
-        
-        let response = ServerResponse::from_binary(&bytes)
-            .map_err(|e| PirError::Pir(e.to_string()))?;
-        
+
+        let response =
+            ServerResponse::from_binary(&bytes).map_err(|e| PirError::Pir(e.to_string()))?;
+
         let entry = extract_with_variant(
             &inner.crs,
             &client_state,
             &response,
             64,
             InspireVariant::OnePacking,
-        ).map_err(|e| PirError::Pir(e.to_string()))?;
-        
+        )
+        .map_err(|e| PirError::Pir(e.to_string()))?;
+
         Ok(entry)
     }
 
@@ -203,20 +217,20 @@ impl PirClient {
     #[wasm_bindgen]
     pub async fn fetch_bucket_index(&self) -> Result<BucketIndex, JsValue> {
         let http = HttpClient::new(self.server_url.clone());
-        
+
         console_log!("Fetching bucket index...");
-        
+
         let bytes = http
             .get_binary("/index/raw")
             .await
             .map_err(PirError::from)?;
-        
+
         console_log!("Received {} KB", bytes.len() / 1024);
-        
+
         let index = BucketIndex::from_bytes(&bytes)?;
-        
+
         console_log!("Bucket index loaded: {} entries", index.total_entries());
-        
+
         Ok(index)
     }
 }

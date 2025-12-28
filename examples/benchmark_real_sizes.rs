@@ -9,14 +9,17 @@ use std::time::Instant;
 
 use inspire_pir::math::GaussianSampler;
 use inspire_pir::params::InspireParams;
-use inspire_pir::pir::{query, query_seeded, respond, extract, setup};
+use inspire_pir::pir::{extract, query, query_seeded, respond, setup};
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Real-Size PIR Benchmark");
     println!("=======================\n");
 
     let params = InspireParams::secure_128_d2048();
-    println!("Parameters: d={}, q=2^60, 128-bit security\n", params.ring_dim);
+    println!(
+        "Parameters: d={}, q=2^60, 128-bit security\n",
+        params.ring_dim
+    );
 
     // Test with increasing database sizes
     // Real hot lane might have ~1M entries, cold lane ~2.7B entries
@@ -31,8 +34,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let entry_size = 32;
 
     for (name, num_entries) in test_sizes {
-        println!("Database: {} ({} entries, {} KB)", name, num_entries, num_entries * entry_size / 1024);
-        
+        println!(
+            "Database: {} ({} entries, {} KB)",
+            name,
+            num_entries,
+            num_entries * entry_size / 1024
+        );
+
         let database: Vec<u8> = (0..(num_entries * entry_size))
             .map(|i| (i % 256) as u8)
             .collect();
@@ -47,16 +55,28 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Regular query
         let target_index = (num_entries / 2) as u64;
-        
+
         let query_start = Instant::now();
-        let (state, client_query) = query(&crs, target_index, &encoded_db.config, &rlwe_sk, &mut sampler)
-            .map_err(|e| format!("Query failed: {}", e))?;
+        let (state, client_query) = query(
+            &crs,
+            target_index,
+            &encoded_db.config,
+            &rlwe_sk,
+            &mut sampler,
+        )
+        .map_err(|e| format!("Query failed: {}", e))?;
         let query_time = query_start.elapsed();
 
         // Seeded query
         let seeded_start = Instant::now();
-        let (state_seeded, seeded_query) = query_seeded(&crs, target_index, &encoded_db.config, &rlwe_sk, &mut sampler)
-            .map_err(|e| format!("Seeded query failed: {}", e))?;
+        let (state_seeded, seeded_query) = query_seeded(
+            &crs,
+            target_index,
+            &encoded_db.config,
+            &rlwe_sk,
+            &mut sampler,
+        )
+        .map_err(|e| format!("Seeded query failed: {}", e))?;
         let seeded_query_time = seeded_start.elapsed();
 
         // Server respond (regular)
@@ -79,32 +99,62 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let extract_time = extract_start.elapsed();
 
         // Verify correctness
-        let expected = &database[target_index as usize * entry_size..(target_index as usize + 1) * entry_size];
+        let expected =
+            &database[target_index as usize * entry_size..(target_index as usize + 1) * entry_size];
         assert_eq!(result, expected, "PIR result mismatch!");
 
         // Measure sizes (JSON)
         let query_json = serde_json::to_vec(&client_query)?;
         let seeded_json = serde_json::to_vec(&seeded_query)?;
         let response_json = serde_json::to_vec(&response)?;
-        
+
         // Measure sizes (binary/bincode)
-        let response_binary = response.to_binary()
+        let response_binary = response
+            .to_binary()
             .map_err(|e| format!("Binary serialize failed: {}", e))?;
 
-        println!("  Setup time:           {:>8.2} ms", setup_time.as_secs_f64() * 1000.0);
-        println!("  Query gen time:       {:>8.2} ms (regular)", query_time.as_secs_f64() * 1000.0);
-        println!("  Query gen time:       {:>8.2} ms (seeded)", seeded_query_time.as_secs_f64() * 1000.0);
-        println!("  Server respond time:  {:>8.2} ms (regular)", respond_time.as_secs_f64() * 1000.0);
-        println!("  Server respond time:  {:>8.2} ms (seeded+expand)", respond_seeded_time.as_secs_f64() * 1000.0);
-        println!("  Extract time:         {:>8.2} ms", extract_time.as_secs_f64() * 1000.0);
-        println!("  Query size:           {:>8.1} KB (regular JSON)", query_json.len() as f64 / 1024.0);
-        println!("  Query size:           {:>8.1} KB (seeded JSON, {:.1}% reduction)", 
+        println!(
+            "  Setup time:           {:>8.2} ms",
+            setup_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Query gen time:       {:>8.2} ms (regular)",
+            query_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Query gen time:       {:>8.2} ms (seeded)",
+            seeded_query_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Server respond time:  {:>8.2} ms (regular)",
+            respond_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Server respond time:  {:>8.2} ms (seeded+expand)",
+            respond_seeded_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Extract time:         {:>8.2} ms",
+            extract_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Query size:           {:>8.1} KB (regular JSON)",
+            query_json.len() as f64 / 1024.0
+        );
+        println!(
+            "  Query size:           {:>8.1} KB (seeded JSON, {:.1}% reduction)",
             seeded_json.len() as f64 / 1024.0,
-            100.0 * (1.0 - seeded_json.len() as f64 / query_json.len() as f64));
-        println!("  Response size:        {:>8.1} KB (JSON)", response_json.len() as f64 / 1024.0);
-        println!("  Response size:        {:>8.1} KB (binary, {:.1}% reduction)", 
+            100.0 * (1.0 - seeded_json.len() as f64 / query_json.len() as f64)
+        );
+        println!(
+            "  Response size:        {:>8.1} KB (JSON)",
+            response_json.len() as f64 / 1024.0
+        );
+        println!(
+            "  Response size:        {:>8.1} KB (binary, {:.1}% reduction)",
             response_binary.len() as f64 / 1024.0,
-            100.0 * (1.0 - response_binary.len() as f64 / response_json.len() as f64));
+            100.0 * (1.0 - response_binary.len() as f64 / response_json.len() as f64)
+        );
         println!("  [OK] Result verified\n");
     }
 

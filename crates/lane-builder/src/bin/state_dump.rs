@@ -20,7 +20,7 @@ use std::ptr;
 use clap::Parser;
 use eyre::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use mdbx_rs::{*, MDBX_cursor_op::*};
+use mdbx_rs::{MDBX_cursor_op::*, *};
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]

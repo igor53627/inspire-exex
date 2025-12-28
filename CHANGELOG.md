@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed cold lane PIR extraction failure caused by GaussianSampler state contamination (#65)
+  - `TwoLaneSetup` now uses separate samplers for hot and cold lane setup
+  - Previously, sharing a sampler between setups caused cryptographic failures in the second lane
+  
+- Fixed `test_params()` plaintext modulus from p=65536 to p=65537 (Fermat prime F4)
+  - Ensures `gcd(d, p) = 1` so `mod_inverse(d, p)` exists for tree packing unscaling
+  - Required for OnePacking extraction to work correctly
+
+- Updated server E2E tests to use `extract_with_variant(..., InspireVariant::OnePacking)`
+  - Server uses `respond_one_packing()`, so extraction must use matching variant
+
 ### Added
 
 - New `inspire-updater` crate for syncing PIR database from ethrex node (#62)

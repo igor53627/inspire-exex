@@ -4,14 +4,10 @@
 
 use std::path::Path;
 
-use inspire_core::{HotLaneManifest, TwoLaneConfig, CrsMetadata, PirParams, PIR_PARAMS_VERSION};
-use inspire_pir::{
-    setup as pir_setup,
-    InspireParams, SecurityLevel,
-    ServerCrs, EncodedDatabase,
-};
+use inspire_core::{CrsMetadata, HotLaneManifest, PirParams, TwoLaneConfig, PIR_PARAMS_VERSION};
 use inspire_pir::math::GaussianSampler;
 use inspire_pir::rlwe::RlweSecretKey;
+use inspire_pir::{setup as pir_setup, EncodedDatabase, InspireParams, SecurityLevel, ServerCrs};
 
 /// Convert InspireParams to PirParams for metadata
 fn to_pir_params(p: &InspireParams) -> PirParams {
@@ -132,7 +128,7 @@ impl TwoLaneSetup {
     #[cfg(any(test, feature = "dev-keys"))]
     pub fn emit_secret_key(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         let path = path.into();
-        
+
         // Guard: don't allow secret key in or under the PIR output directory
         if path.starts_with(&self.output_dir) {
             panic!(
@@ -141,7 +137,7 @@ impl TwoLaneSetup {
                 self.output_dir.display()
             );
         }
-        
+
         self.secret_key_path = Some(path);
         self
     }
@@ -150,11 +146,9 @@ impl TwoLaneSetup {
     pub fn build(self) -> anyhow::Result<TwoLaneSetupResult> {
         let hot_dir = self.output_dir.join("hot");
         let cold_dir = self.output_dir.join("cold");
-        
+
         std::fs::create_dir_all(&hot_dir)?;
         std::fs::create_dir_all(&cold_dir)?;
-
-        let mut sampler = GaussianSampler::new(self.params.sigma);
 
         tracing::info!(
             hot_entries = self.hot_data.len() / self.entry_size,
@@ -165,23 +159,30 @@ impl TwoLaneSetup {
         // Note: pir_setup returns a secret key, but we discard it for security.
         // Clients should generate their own keys. The secret key from setup is
         // only used internally and not returned or saved (unless emit_secret_key is used).
+        //
+        // IMPORTANT: Use separate samplers for each lane to avoid state contamination
+        // that can cause cryptographic failures. See issue #65 for details.
+        let mut hot_sampler = GaussianSampler::new(self.params.sigma);
         let (hot_crs, hot_db, _hot_sk) = pir_setup(
             &self.params,
             &self.hot_data,
             self.entry_size,
-            &mut sampler,
-        ).map_err(|e| anyhow::anyhow!("{}", e))?;
+            &mut hot_sampler,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+        let mut cold_sampler = GaussianSampler::new(self.params.sigma);
         let (cold_crs, cold_db, _cold_sk) = pir_setup(
             &self.params,
             &self.cold_data,
             self.entry_size,
-            &mut sampler,
-        ).map_err(|e| anyhow::anyhow!("{}", e))?;
+            &mut cold_sampler,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         save_crs(&hot_crs, &hot_dir.join("crs.json"))?;
         save_db(&hot_db, &hot_dir.join("encoded.json"))?;
-        
+
         save_crs(&cold_crs, &cold_dir.join("crs.json"))?;
         save_db(&cold_db, &cold_dir.join("encoded.json"))?;
 
@@ -225,7 +226,8 @@ impl TwoLaneSetup {
         #[cfg(any(test, feature = "dev-keys"))]
         if let Some(sk_path) = &self.secret_key_path {
             // For testing, we need a key - regenerate one since we discarded the setup keys
-            let test_sk = RlweSecretKey::generate(&self.params, &mut sampler);
+            let mut test_sampler = GaussianSampler::new(self.params.sigma);
+            let test_sk = RlweSecretKey::generate(&self.params, &mut test_sampler);
             save_secret_key(&test_sk, sk_path)?;
             tracing::warn!(
                 path = %sk_path.display(),
@@ -260,8 +262,8 @@ pub fn default_params() -> InspireParams {
     InspireParams {
         ring_dim: 2048,
         q: 1152921504606830593, // 2^60 - 2^14 + 1
-        p: 65536,              // 2^16
-        sigma: 6.4,            // Updated to match InsPIRe paper
+        p: 65536,               // 2^16
+        sigma: 6.4,             // Updated to match InsPIRe paper
         gadget_base: 1 << 20,
         gadget_len: 3,
         security_level: SecurityLevel::Bits128,
@@ -273,8 +275,8 @@ pub fn test_params() -> InspireParams {
     InspireParams {
         ring_dim: 256,
         q: 1152921504606830593,
-        p: 65536,
-        sigma: 6.4,            // Updated to match InsPIRe paper
+        p: 65537, // Fermat prime F4, ensures gcd(d, p) = 1 for mod_inverse
+        sigma: 6.4,
         gadget_base: 1 << 20,
         gadget_len: 3,
         security_level: SecurityLevel::Bits128,
@@ -315,10 +317,10 @@ mod tests {
     #[test]
     fn test_two_lane_setup() {
         let dir = tempdir().unwrap();
-        
+
         let hot_data: Vec<u8> = (0..256 * 32).map(|i| (i % 256) as u8).collect();
         let cold_data: Vec<u8> = (0..256 * 32).map(|i| ((i + 1) % 256) as u8).collect();
-        
+
         let result = TwoLaneSetup::new(dir.path())
             .hot_data(hot_data)
             .cold_data(cold_data)
@@ -326,7 +328,7 @@ mod tests {
             .params(test_params())
             .build()
             .unwrap();
-        
+
         assert!(dir.path().join("hot/crs.json").exists());
         assert!(dir.path().join("hot/encoded.json").exists());
         assert!(dir.path().join("hot/crs.meta.json").exists());
@@ -336,7 +338,7 @@ mod tests {
         assert!(dir.path().join("config.json").exists());
         // Secret key should NOT be saved by default (security)
         assert!(!dir.path().join("secret_key.json").exists());
-        
+
         assert_eq!(result.config.hot_entries, 256);
         assert_eq!(result.config.cold_entries, 256);
 
@@ -354,10 +356,10 @@ mod tests {
         let pir_dir = tempdir().unwrap();
         let key_dir = tempdir().unwrap();
         let sk_path = key_dir.path().join("test_secret_key.json");
-        
+
         let hot_data: Vec<u8> = (0..256 * 32).map(|i| (i % 256) as u8).collect();
         let cold_data: Vec<u8> = (0..256 * 32).map(|i| ((i + 1) % 256) as u8).collect();
-        
+
         TwoLaneSetup::new(pir_dir.path())
             .hot_data(hot_data)
             .cold_data(cold_data)
@@ -366,10 +368,10 @@ mod tests {
             .emit_secret_key(&sk_path)
             .build()
             .unwrap();
-        
+
         // Secret key should be saved when explicitly requested
         assert!(sk_path.exists());
-        
+
         // Should be loadable
         let _sk = load_secret_key(&sk_path).unwrap();
     }
@@ -380,10 +382,10 @@ mod tests {
         let dir = tempdir().unwrap();
         // Try to save secret key inside the PIR output directory - should panic
         let sk_path = dir.path().join("secret_key.json");
-        
+
         let hot_data: Vec<u8> = (0..256 * 32).map(|i| (i % 256) as u8).collect();
         let cold_data: Vec<u8> = (0..256 * 32).map(|i| ((i + 1) % 256) as u8).collect();
-        
+
         TwoLaneSetup::new(dir.path())
             .hot_data(hot_data)
             .cold_data(cold_data)

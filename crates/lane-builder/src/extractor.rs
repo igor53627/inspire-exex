@@ -88,7 +88,7 @@ impl ContractExtractor {
             if count >= self.max_contracts {
                 break;
             }
-            
+
             let slots = if stats.storage_slots > 0 {
                 stats.storage_slots
             } else {
@@ -105,7 +105,7 @@ impl ContractExtractor {
                 slots,
                 stats.category.clone(),
             );
-            
+
             total_entries += slots;
             count += 1;
         }
@@ -124,7 +124,7 @@ impl ContractExtractor {
     pub fn load_from_file(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let infos: Vec<ContractInfo> = serde_json::from_str(&content)?;
-        
+
         let mut extractor = Self::new();
         for info in infos {
             extractor.add_contract(ContractStats {
@@ -135,7 +135,7 @@ impl ContractExtractor {
                 storage_slots: info.storage_slots.unwrap_or(0),
             });
         }
-        
+
         Ok(extractor)
     }
 
@@ -187,7 +187,7 @@ mod tests {
         });
 
         let manifest = extractor.build_manifest(12345);
-        
+
         assert_eq!(manifest.contract_count(), 2);
         assert_eq!(manifest.total_entries, 800);
         assert_eq!(manifest.contracts[0].name, "Test2");
@@ -212,7 +212,7 @@ mod tests {
         });
 
         let manifest = extractor.build_manifest(12345);
-        
+
         assert_eq!(manifest.contract_count(), 1);
         assert_eq!(manifest.total_entries, 400);
     }

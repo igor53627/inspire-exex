@@ -11,10 +11,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use inspire_core::{HotLaneManifest, Lane, LaneRouter, TwoLaneConfig, CrsMetadata, PIR_PARAMS_VERSION};
 use inspire_client::BucketIndex;
+use inspire_core::{
+    CrsMetadata, HotLaneManifest, Lane, LaneRouter, TwoLaneConfig, PIR_PARAMS_VERSION,
+};
 use inspire_pir::{
-    params::ShardConfig, respond_one_packing, respond_mmap_one_packing, respond_inspiring,
+    params::ShardConfig, respond_inspiring, respond_mmap_one_packing, respond_one_packing,
     ClientQuery, EncodedDatabase, MmapDatabase, ServerCrs, ServerResponse,
 };
 
@@ -144,9 +146,9 @@ pub struct CachedBucketIndex {
 impl CachedBucketIndex {
     /// Create cached index from parsed BucketIndex
     pub fn new(index: BucketIndex) -> Result<Self> {
-        let compressed = index
-            .to_compressed()
-            .map_err(|e| ServerError::Internal(format!("Failed to compress bucket index: {}", e)))?;
+        let compressed = index.to_compressed().map_err(|e| {
+            ServerError::Internal(format!("Failed to compress bucket index: {}", e))
+        })?;
         Ok(Self { index, compressed })
     }
 
@@ -355,7 +357,11 @@ impl ServerState {
 
         match result {
             Ok(lane_data) => {
-                let mode = if self.config.use_mmap { "mmap" } else { "inmemory" };
+                let mode = if self.config.use_mmap {
+                    "mmap"
+                } else {
+                    "inmemory"
+                };
                 tracing::info!(entries = lane_data.entry_count, mode, "Hot lane loaded");
                 Some(lane_data)
             }
@@ -382,7 +388,11 @@ impl ServerState {
 
         match result {
             Ok(lane_data) => {
-                let mode = if self.config.use_mmap { "mmap" } else { "inmemory" };
+                let mode = if self.config.use_mmap {
+                    "mmap"
+                } else {
+                    "inmemory"
+                };
                 tracing::info!(entries = lane_data.entry_count, mode, "Cold lane loaded");
                 Some(lane_data)
             }
@@ -561,9 +571,8 @@ impl ServerState {
             return Ok(());
         }
 
-        let metadata = CrsMetadata::load(&meta_path).map_err(|e| {
-            ServerError::Internal(format!("Failed to load CRS metadata: {}", e))
-        })?;
+        let metadata = CrsMetadata::load(&meta_path)
+            .map_err(|e| ServerError::Internal(format!("Failed to load CRS metadata: {}", e)))?;
 
         if metadata.pir_params_version != PIR_PARAMS_VERSION {
             return Err(ServerError::ParamsVersionMismatch {

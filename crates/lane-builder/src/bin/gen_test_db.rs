@@ -114,14 +114,19 @@ fn main() -> Result<()> {
     writer.flush()?;
 
     let file_size = STATE_HEADER_SIZE + (args.entries as usize * STATE_ENTRY_SIZE);
-    println!("\nGenerated {} bytes ({} header + {} entries)", 
-             file_size, STATE_HEADER_SIZE, args.entries);
+    println!(
+        "\nGenerated {} bytes ({} header + {} entries)",
+        file_size, STATE_HEADER_SIZE, args.entries
+    );
 
     // Verify by reading back
     let data = std::fs::read(&args.output)?;
     let recovered_header = StateHeader::from_bytes(&data)?;
     println!("\nVerification:");
-    println!("  Magic: {:?}", std::str::from_utf8(&recovered_header.magic).unwrap_or("?"));
+    println!(
+        "  Magic: {:?}",
+        std::str::from_utf8(&recovered_header.magic).unwrap_or("?")
+    );
     println!("  Version: {}", recovered_header.version);
     println!("  Entry count: {}", recovered_header.entry_count);
     println!("  Block: {}", recovered_header.block_number);

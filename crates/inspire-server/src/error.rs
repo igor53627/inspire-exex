@@ -27,7 +27,9 @@ pub enum ServerError {
     #[error("PIR error: {0}")]
     PirError(String),
 
-    #[error("Config mismatch: {field} - config says {config_value}, but loaded data has {actual_value}")]
+    #[error(
+        "Config mismatch: {field} - config says {config_value}, but loaded data has {actual_value}"
+    )]
     ConfigMismatch {
         field: String,
         config_value: String,
@@ -41,7 +43,9 @@ pub enum ServerError {
         lane: String,
     },
 
-    #[error("CRS metadata not found for {lane} lane at {path}. Regenerate with lane-builder >= 0.1.0.")]
+    #[error(
+        "CRS metadata not found for {lane} lane at {path}. Regenerate with lane-builder >= 0.1.0."
+    )]
     CrsMetadataNotFound { lane: String, path: String },
 
     #[error("IO error: {0}")]

@@ -27,7 +27,7 @@ impl ReloadClient {
             .connect_timeout(Duration::from_secs(10))
             .build()
             .expect("Failed to build HTTP client");
-        
+
         Self {
             client,
             server_url: server_url.into(),
@@ -36,12 +36,8 @@ impl ReloadClient {
 
     pub async fn reload(&self) -> anyhow::Result<ReloadResult> {
         let url = format!("{}/admin/reload", self.server_url);
-        
-        let response = self
-            .client
-            .post(&url)
-            .send()
-            .await?;
+
+        let response = self.client.post(&url).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -55,7 +51,7 @@ impl ReloadClient {
 
     pub async fn health(&self) -> anyhow::Result<bool> {
         let url = format!("{}/health", self.server_url);
-        
+
         let response = self.client.get(&url).send().await?;
         Ok(response.status().is_success())
     }

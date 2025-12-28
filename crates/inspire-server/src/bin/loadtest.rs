@@ -100,7 +100,8 @@ impl Stats {
     fn record_success(&self, latency_us: u64) {
         self.total_queries.fetch_add(1, Ordering::Relaxed);
         self.successful_queries.fetch_add(1, Ordering::Relaxed);
-        self.total_latency_us.fetch_add(latency_us, Ordering::Relaxed);
+        self.total_latency_us
+            .fetch_add(latency_us, Ordering::Relaxed);
         self.min_latency_us.fetch_min(latency_us, Ordering::Relaxed);
         self.max_latency_us.fetch_max(latency_us, Ordering::Relaxed);
     }
@@ -153,7 +154,11 @@ impl Stats {
     }
 }
 
-async fn fetch_crs(client: &Client, url: &str, lane: &str) -> anyhow::Result<(ServerCrs, inspire_pir::params::ShardConfig, u64)> {
+async fn fetch_crs(
+    client: &Client,
+    url: &str,
+    lane: &str,
+) -> anyhow::Result<(ServerCrs, inspire_pir::params::ShardConfig, u64)> {
     let resp: CrsResponse = client
         .get(format!("{}/crs/{}", url, lane))
         .send()
@@ -197,7 +202,9 @@ async fn run_client(
 
             let resp: QueryResponse = http
                 .post(format!("{}/query/{}", server_url, lane))
-                .json(&QueryRequest { query: client_query })
+                .json(&QueryRequest {
+                    query: client_query,
+                })
                 .send()
                 .await?
                 .json()
@@ -298,18 +305,7 @@ async fn main() -> anyhow::Result<()> {
             let sem = semaphore.clone();
 
             warmup_handles.push(tokio::spawn(async move {
-                run_client(
-                    i,
-                    url,
-                    lane,
-                    1,
-                    crs,
-                    shard_config,
-                    entry_count,
-                    stats,
-                    sem,
-                )
-                .await;
+                run_client(i, url, lane, 1, crs, shard_config, entry_count, stats, sem).await;
             }));
         }
 
@@ -318,7 +314,10 @@ async fn main() -> anyhow::Result<()> {
         }
 
         let warmup_success = warmup_stats.successful_queries.load(Ordering::Relaxed);
-        println!("Warmup complete: {}/{} successful", warmup_success, args.warmup);
+        println!(
+            "Warmup complete: {}/{} successful",
+            warmup_success, args.warmup
+        );
     }
 
     let stop_reloader = Arc::new(AtomicU64::new(0));
@@ -333,8 +332,12 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    println!("\nStarting load test with {} clients x {} queries = {} total...",
-             args.clients, args.queries, args.clients * args.queries);
+    println!(
+        "\nStarting load test with {} clients x {} queries = {} total...",
+        args.clients,
+        args.queries,
+        args.clients * args.queries
+    );
 
     let start = Instant::now();
     let mut handles = vec![];

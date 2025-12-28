@@ -55,7 +55,9 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("inspire_updater=info".parse()?))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("inspire_updater=info".parse()?),
+        )
         .init();
 
     let args = Args::parse();
@@ -80,9 +82,14 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(limit) = args.dump_test {
         // Test pir_dumpStorage
-        let rpc = inspire_updater::EthrexClient::new(&config.rpc_url, config.admin_rpc_url.clone()).await?;
+        let rpc = inspire_updater::EthrexClient::new(&config.rpc_url, config.admin_rpc_url.clone())
+            .await?;
         let resp = rpc.pir_dump_storage(None, limit).await?;
-        println!("[OK] pir_dumpStorage returned {} entries (has_more: {})", resp.entries.len(), resp.has_more);
+        println!(
+            "[OK] pir_dumpStorage returned {} entries (has_more: {})",
+            resp.entries.len(),
+            resp.has_more
+        );
         for entry in resp.entries.iter().take(5) {
             println!("  {} slot {} = {}", entry.address, entry.slot, entry.value);
         }
@@ -94,16 +101,28 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(blocks) = args.delta_test {
         // Test pir_getStateDelta
-        let rpc = inspire_updater::EthrexClient::new(&config.rpc_url, config.admin_rpc_url.clone()).await?;
+        let rpc = inspire_updater::EthrexClient::new(&config.rpc_url, config.admin_rpc_url.clone())
+            .await?;
         let current = rpc.block_number().await?;
         let from = current.saturating_sub(blocks);
         println!("Fetching deltas from block {} to {}", from, current);
         let resp = rpc.pir_get_state_delta(from, current).await?;
-        println!("[OK] pir_getStateDelta: {} total deltas across {} blocks", resp.total_deltas, resp.blocks.len());
+        println!(
+            "[OK] pir_getStateDelta: {} total deltas across {} blocks",
+            resp.total_deltas,
+            resp.blocks.len()
+        );
         for block in resp.blocks.iter().take(3) {
-            println!("  Block {}: {} deltas", block.block_number, block.deltas.len());
+            println!(
+                "  Block {}: {} deltas",
+                block.block_number,
+                block.deltas.len()
+            );
             for delta in block.deltas.iter().take(2) {
-                println!("    {} slot {} = {}", delta.address, delta.slot, delta.value);
+                println!(
+                    "    {} slot {} = {}",
+                    delta.address, delta.slot, delta.value
+                );
             }
         }
         if resp.blocks.len() > 3 {

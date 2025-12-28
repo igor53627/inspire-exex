@@ -27,7 +27,8 @@ pub fn compute_bucket_id(address: &[u8; 20], slot: &[u8; 32]) -> usize {
     hasher.finalize(&mut hash);
 
     // Take first 18 bits as bucket ID
-    let bucket_id = ((hash[0] as usize) << 10) | ((hash[1] as usize) << 2) | ((hash[2] as usize) >> 6);
+    let bucket_id =
+        ((hash[0] as usize) << 10) | ((hash[1] as usize) << 2) | ((hash[2] as usize) >> 6);
     bucket_id & (NUM_BUCKETS - 1)
 }
 
@@ -80,13 +81,25 @@ impl core::fmt::Display for BucketDeltaError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             BucketDeltaError::HeaderTooShort { actual } => {
-                write!(f, "Invalid delta: header too short (need 12 bytes, got {})", actual)
+                write!(
+                    f,
+                    "Invalid delta: header too short (need 12 bytes, got {})",
+                    actual
+                )
             }
             BucketDeltaError::Truncated { expected, actual } => {
-                write!(f, "Invalid delta: truncated (expected {} bytes, got {})", expected, actual)
+                write!(
+                    f,
+                    "Invalid delta: truncated (expected {} bytes, got {})",
+                    expected, actual
+                )
             }
             BucketDeltaError::TooManyUpdates { count } => {
-                write!(f, "Invalid delta: too many updates ({}, max {})", count, NUM_BUCKETS)
+                write!(
+                    f,
+                    "Invalid delta: too many updates ({}, max {})",
+                    count, NUM_BUCKETS
+                )
             }
         }
     }
@@ -109,14 +122,18 @@ impl BucketDelta {
 
         // Reject excessive update counts to prevent OOM on 32-bit targets (including WASM)
         if update_count > NUM_BUCKETS {
-            return Err(BucketDeltaError::TooManyUpdates { count: update_count });
+            return Err(BucketDeltaError::TooManyUpdates {
+                count: update_count,
+            });
         }
 
         // Use checked arithmetic to prevent overflow on 32-bit targets
         let payload_len = update_count
             .checked_mul(UPDATE_SIZE)
             .and_then(|p| HEADER_LEN.checked_add(p))
-            .ok_or(BucketDeltaError::TooManyUpdates { count: update_count })?;
+            .ok_or(BucketDeltaError::TooManyUpdates {
+                count: update_count,
+            })?;
 
         if data.len() < payload_len {
             return Err(BucketDeltaError::Truncated {
@@ -129,7 +146,8 @@ impl BucketDelta {
         let mut offset = HEADER_LEN;
 
         for _ in 0..update_count {
-            let bucket_id = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+            let bucket_id =
+                u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
             let new_count = u16::from_le_bytes(data[offset + 4..offset + 6].try_into().unwrap());
             updates.push((bucket_id, new_count));
             offset += UPDATE_SIZE;
@@ -205,7 +223,10 @@ mod tests {
         data[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
 
         let result = BucketDelta::from_bytes(&data);
-        assert!(matches!(result, Err(BucketDeltaError::TooManyUpdates { .. })));
+        assert!(matches!(
+            result,
+            Err(BucketDeltaError::TooManyUpdates { .. })
+        ));
     }
 
     #[test]
@@ -215,7 +236,9 @@ mod tests {
         data[8..12].copy_from_slice(&((NUM_BUCKETS + 1) as u32).to_le_bytes());
 
         let result = BucketDelta::from_bytes(&data);
-        assert!(matches!(result, Err(BucketDeltaError::TooManyUpdates { count }) if count == NUM_BUCKETS + 1));
+        assert!(
+            matches!(result, Err(BucketDeltaError::TooManyUpdates { count }) if count == NUM_BUCKETS + 1)
+        );
     }
 
     #[test]
@@ -236,6 +259,9 @@ mod tests {
         let data = vec![0u8; 8]; // only 8 bytes, need 12
 
         let result = BucketDelta::from_bytes(&data);
-        assert!(matches!(result, Err(BucketDeltaError::HeaderTooShort { actual: 8 })));
+        assert!(matches!(
+            result,
+            Err(BucketDeltaError::HeaderTooShort { actual: 8 })
+        ));
     }
 }

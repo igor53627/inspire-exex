@@ -15,8 +15,8 @@ use inspire_core::Lane;
 use inspire_pir::{params::ShardConfig, ClientQuery, SeededClientQuery, ServerResponse};
 
 use crate::error::{Result, ServerError};
-use crate::state::{ReloadResult, SharedState};
 use crate::metrics;
+use crate::state::{ReloadResult, SharedState};
 
 /// Health/readiness check response
 #[derive(Serialize)]
@@ -84,7 +84,11 @@ async fn health(State(state): State<SharedState>) -> Response {
     let ready = snapshot.is_ready();
 
     let response = HealthResponse {
-        status: if ready { "ok".to_string() } else { "unavailable".to_string() },
+        status: if ready {
+            "ok".to_string()
+        } else {
+            "unavailable".to_string()
+        },
         hot_loaded: stats.hot_loaded,
         cold_loaded: stats.cold_loaded,
         mmap_mode: state.config.use_mmap,
@@ -128,7 +132,10 @@ async fn info(State(state): State<SharedState>) -> Json<ServerInfo> {
 }
 
 /// Get CRS for a specific lane
-async fn get_crs(State(state): State<SharedState>, Path(lane): Path<String>) -> Result<Json<CrsResponse>> {
+async fn get_crs(
+    State(state): State<SharedState>,
+    Path(lane): Path<String>,
+) -> Result<Json<CrsResponse>> {
     let lane = parse_lane(&lane)?;
     let snapshot = state.load_snapshot();
     let lane_data = snapshot.get_lane(lane)?;
@@ -212,11 +219,7 @@ async fn query_seeded_binary(
         .to_binary()
         .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-    Ok((
-        [(header::CONTENT_TYPE, "application/octet-stream")],
-        binary,
-    )
-        .into_response())
+    Ok(([(header::CONTENT_TYPE, "application/octet-stream")], binary).into_response())
 }
 
 /// Process a full PIR query with binary response
@@ -234,11 +237,7 @@ async fn query_binary(
         .to_binary()
         .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-    Ok((
-        [(header::CONTENT_TYPE, "application/octet-stream")],
-        binary,
-    )
-        .into_response())
+    Ok(([(header::CONTENT_TYPE, "application/octet-stream")], binary).into_response())
 }
 
 /// Reload lanes from disk (admin endpoint)
@@ -255,11 +254,12 @@ async fn admin_reload(State(state): State<SharedState>) -> Result<Json<ReloadRes
 /// ~150 KB compressed, enables O(1) index computation.
 async fn get_bucket_index(State(state): State<SharedState>) -> Result<Response> {
     let snapshot = state.load_snapshot();
-    
-    let cached = snapshot.bucket_index.as_ref().ok_or_else(|| {
-        ServerError::BucketIndexNotLoaded
-    })?;
-    
+
+    let cached = snapshot
+        .bucket_index
+        .as_ref()
+        .ok_or_else(|| ServerError::BucketIndexNotLoaded)?;
+
     Ok((
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
@@ -267,7 +267,8 @@ async fn get_bucket_index(State(state): State<SharedState>) -> Result<Response> 
             (header::CACHE_CONTROL, "public, max-age=60"),
         ],
         cached.compressed.clone(),
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Get bucket index (uncompressed, 512 KB)
@@ -275,30 +276,33 @@ async fn get_bucket_index(State(state): State<SharedState>) -> Result<Response> 
 /// For WASM clients that can't use zstd decompression.
 async fn get_bucket_index_raw(State(state): State<SharedState>) -> Result<Response> {
     let snapshot = state.load_snapshot();
-    
-    let cached = snapshot.bucket_index.as_ref().ok_or_else(|| {
-        ServerError::BucketIndexNotLoaded
-    })?;
-    
+
+    let cached = snapshot
+        .bucket_index
+        .as_ref()
+        .ok_or_else(|| ServerError::BucketIndexNotLoaded)?;
+
     let data = cached.index.to_bytes();
-    
+
     Ok((
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
             (header::CACHE_CONTROL, "public, max-age=60"),
         ],
         data,
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// Get bucket index info (metadata only)
 async fn get_bucket_index_info(State(state): State<SharedState>) -> Result<Json<BucketIndexInfo>> {
     let snapshot = state.load_snapshot();
-    
-    let cached = snapshot.bucket_index.as_ref().ok_or_else(|| {
-        ServerError::BucketIndexNotLoaded
-    })?;
-    
+
+    let cached = snapshot
+        .bucket_index
+        .as_ref()
+        .ok_or_else(|| ServerError::BucketIndexNotLoaded)?;
+
     Ok(Json(BucketIndexInfo {
         total_entries: cached.total_entries(),
         num_buckets: inspire_client::bucket_index::NUM_BUCKETS,
@@ -323,10 +327,7 @@ pub struct BucketIndexInfo {
 /// 2. Server sends binary BucketDelta messages after each block (~12 sec)
 /// 3. Server responds to Ping with Pong
 /// 4. If client lags, connection is closed with code 4000 and reason "lagged:<block>"
-async fn subscribe_index(
-    ws: WebSocketUpgrade,
-    State(state): State<SharedState>,
-) -> Response {
+async fn subscribe_index(ws: WebSocketUpgrade, State(state): State<SharedState>) -> Response {
     let snapshot = state.load_snapshot();
     let current_block = snapshot.block_number;
     ws.on_upgrade(move |socket| {
@@ -377,10 +378,13 @@ pub fn create_public_router_with_metrics(
         .with_state(state);
 
     if let Some(handle) = prometheus_handle {
-        router = router.route("/metrics", get(move || {
-            let metrics = handle.render();
-            async move { metrics }
-        }));
+        router = router.route(
+            "/metrics",
+            get(move || {
+                let metrics = handle.render();
+                async move { metrics }
+            }),
+        );
     }
 
     router
@@ -421,10 +425,13 @@ pub fn create_router_with_metrics(
         .with_state(state);
 
     if let Some(handle) = prometheus_handle {
-        router = router.route("/metrics", get(move || {
-            let metrics = handle.render();
-            async move { metrics }
-        }));
+        router = router.route(
+            "/metrics",
+            get(move || {
+                let metrics = handle.render();
+                async move { metrics }
+            }),
+        );
     }
 
     router

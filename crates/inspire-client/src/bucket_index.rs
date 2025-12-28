@@ -64,8 +64,8 @@ impl BucketIndex {
 
     /// Load bucket index from zstd-compressed binary (~150 KB)
     pub fn from_compressed(data: &[u8]) -> Result<Self, BucketIndexError> {
-        let decoder = zstd::Decoder::new(data)
-            .map_err(|e| BucketIndexError::Decompression(e.to_string()))?;
+        let decoder =
+            zstd::Decoder::new(data).map_err(|e| BucketIndexError::Decompression(e.to_string()))?;
         const MAX_SIZE: u64 = (NUM_BUCKETS * 2 + 1) as u64;
         let mut limited = decoder.take(MAX_SIZE);
         let mut decompressed = Vec::with_capacity(NUM_BUCKETS * 2);
@@ -126,10 +126,7 @@ impl BucketIndex {
 
     /// Serialize to bytes (uncompressed)
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.counts
-            .iter()
-            .flat_map(|&c| c.to_le_bytes())
-            .collect()
+        self.counts.iter().flat_map(|&c| c.to_le_bytes()).collect()
     }
 
     /// Serialize to compressed bytes
@@ -270,7 +267,10 @@ mod tests {
         data[8..12].copy_from_slice(&u32::MAX.to_le_bytes()); // claims 4B updates
 
         let result = BucketDelta::from_bytes(&data);
-        assert!(result.is_err(), "Should reject delta with huge update_count");
+        assert!(
+            result.is_err(),
+            "Should reject delta with huge update_count"
+        );
     }
 
     #[test]
@@ -283,7 +283,10 @@ mod tests {
         bytes[8..12].copy_from_slice(&10u32.to_le_bytes()); // lie: claim 10 updates
 
         let result = BucketDelta::from_bytes(&bytes);
-        assert!(result.is_err(), "Should reject delta with truncated updates");
+        assert!(
+            result.is_err(),
+            "Should reject delta with truncated updates"
+        );
     }
 
     #[test]
@@ -293,7 +296,10 @@ mod tests {
 
         let result = BucketIndex::from_compressed(&bomb);
         assert!(result.is_err(), "Should reject decompression bomb");
-        assert!(matches!(result, Err(BucketIndexError::DecompressionBomb { .. })));
+        assert!(matches!(
+            result,
+            Err(BucketIndexError::DecompressionBomb { .. })
+        ));
     }
 
     #[test]

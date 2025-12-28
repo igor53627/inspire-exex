@@ -26,15 +26,15 @@ pub mod balance_extractor;
 
 pub use builder::HotLaneBuilder;
 pub use extractor::ContractExtractor;
-pub use hybrid_scorer::{HybridScorer, HybridScorerConfig, ScoredContract, CategoryWeights};
+pub use hybrid_scorer::{CategoryWeights, HybridScorer, HybridScorerConfig, ScoredContract};
 pub use reload::ReloadClient;
-pub use setup::{TwoLaneSetup, TwoLaneSetupResult, default_params, test_params, load_secret_key};
+pub use setup::{default_params, load_secret_key, test_params, TwoLaneSetup, TwoLaneSetupResult};
 
 #[cfg(feature = "exex")]
 pub use exex::{lane_updater_exex, LaneUpdaterConfig};
 
 #[cfg(feature = "backfill")]
-pub use gas_tracker::{GasTracker, BackfillConfig, BackfillResult, GasStats};
+pub use gas_tracker::{BackfillConfig, BackfillResult, GasStats, GasTracker};
 
 #[cfg(feature = "balance")]
 pub use balance_extractor::{BalanceExtractor, BalanceExtractorConfig};

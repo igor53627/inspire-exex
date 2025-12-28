@@ -68,7 +68,10 @@ mod tests {
     #[test]
     fn test_lane_deserialization() {
         assert_eq!(serde_json::from_str::<Lane>("\"hot\"").unwrap(), Lane::Hot);
-        assert_eq!(serde_json::from_str::<Lane>("\"cold\"").unwrap(), Lane::Cold);
+        assert_eq!(
+            serde_json::from_str::<Lane>("\"cold\"").unwrap(),
+            Lane::Cold
+        );
     }
 
     #[test]

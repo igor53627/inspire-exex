@@ -180,7 +180,9 @@ mod hex_address {
         let s = String::deserialize(deserializer)?;
         let s = s.strip_prefix("0x").unwrap_or(&s);
         let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-        bytes.try_into().map_err(|_| serde::de::Error::custom("invalid address length"))
+        bytes
+            .try_into()
+            .map_err(|_| serde::de::Error::custom("invalid address length"))
     }
 }
 
@@ -217,7 +219,7 @@ mod tests {
             tx_count: Some(1000),
             storage_slots: None,
         };
-        
+
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("0xabab"));
         assert!(json.contains("tx_count"));

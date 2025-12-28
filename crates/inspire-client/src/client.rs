@@ -4,14 +4,13 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use inspire_core::{Address, Lane, LaneRouter, StorageKey, StorageValue};
-use inspire_pir::{
-    ServerCrs, ClientQuery, ClientState, SeededClientQuery, ServerResponse,
-    query as pir_query, query_seeded as pir_query_seeded, extract_with_variant,
-    InspireParams,
-};
-use inspire_pir::params::InspireVariant;
 use inspire_pir::math::GaussianSampler;
+use inspire_pir::params::InspireVariant;
 use inspire_pir::rlwe::RlweSecretKey;
+use inspire_pir::{
+    extract_with_variant, query as pir_query, query_seeded as pir_query_seeded, ClientQuery,
+    ClientState, InspireParams, SeededClientQuery, ServerCrs, ServerResponse,
+};
 
 use crate::bucket_index::BucketIndex;
 use crate::error::{ClientError, Result};
@@ -112,7 +111,7 @@ impl TwoLaneClient {
             entry_count: hot_crs_resp.entry_count,
             shard_config: hot_crs_resp.shard_config,
         });
-        
+
         let cold_crs_resp = self.fetch_crs(Lane::Cold).await?;
         let cold_crs: ServerCrs = serde_json::from_str(&cold_crs_resp.crs)?;
         let cold_sk = generate_secret_key(&cold_crs.params);
@@ -123,16 +122,16 @@ impl TwoLaneClient {
             entry_count: cold_entries,
             shard_config: cold_crs_resp.shard_config,
         });
-        
+
         // Update router with cold lane entry count for proper indexing
         self.router.set_cold_entries(cold_entries);
-        
+
         tracing::info!(
             hot_entries = self.hot_state.as_ref().map(|s| s.entry_count).unwrap_or(0),
             cold_entries = cold_entries,
             "Client initialized with both lanes"
         );
-        
+
         Ok(())
     }
 
@@ -140,14 +139,14 @@ impl TwoLaneClient {
     pub async fn fetch_crs(&self, lane: Lane) -> Result<CrsResponse> {
         let url = format!("{}/crs/{}", self.server_url, lane);
         let resp = self.http.get(&url).send().await?;
-        
+
         if !resp.status().is_success() {
             return Err(ClientError::Server {
                 status: resp.status().as_u16(),
                 message: resp.text().await.unwrap_or_default(),
             });
         }
-        
+
         let crs_resp: CrsResponse = resp.json().await?;
         Ok(crs_resp)
     }
@@ -159,24 +158,25 @@ impl TwoLaneClient {
     pub async fn fetch_bucket_index(&mut self) -> Result<()> {
         let url = format!("{}/index", self.server_url);
         let resp = self.http.get(&url).send().await?;
-        
+
         if !resp.status().is_success() {
             return Err(ClientError::Server {
                 status: resp.status().as_u16(),
                 message: resp.text().await.unwrap_or_default(),
             });
         }
-        
+
         let bytes = resp.bytes().await?;
-        let index = BucketIndex::from_compressed(&bytes)
-            .map_err(|e| ClientError::InvalidResponse(format!("Failed to parse bucket index: {}", e)))?;
-        
+        let index = BucketIndex::from_compressed(&bytes).map_err(|e| {
+            ClientError::InvalidResponse(format!("Failed to parse bucket index: {}", e))
+        })?;
+
         tracing::info!(
             total_entries = index.total_entries(),
             size_kb = bytes.len() / 1024,
             "Bucket index loaded"
         );
-        
+
         self.bucket_index = Some(index);
         Ok(())
     }
@@ -199,7 +199,7 @@ impl TwoLaneClient {
     /// Query a storage slot using PIR
     pub async fn query(&self, contract: Address, slot: StorageKey) -> Result<StorageValue> {
         let lane = self.router.route(&contract);
-        
+
         tracing::debug!(
             contract = hex::encode(contract),
             lane = %lane,
@@ -210,80 +210,97 @@ impl TwoLaneClient {
 
         let lane_state = self.get_lane_state(lane)?;
         let index = self.compute_index(&contract, &slot, lane)?;
-        
-        let (client_state, server_response) = match (self.use_seed_expansion, self.use_binary_response) {
-            (true, true) => {
-                let (state, query) = self.build_pir_query_seeded(lane_state, index)?;
-                let resp = self.send_query_seeded_binary(lane, &query).await?;
-                (state, resp)
-            }
-            (true, false) => {
-                let (state, query) = self.build_pir_query_seeded(lane_state, index)?;
-                let resp = self.send_query_seeded(lane, &query).await?;
-                (state, resp.response)
-            }
-            (false, true) => {
-                let (state, query) = self.build_pir_query(lane_state, index)?;
-                let resp = self.send_query_binary(lane, &query).await?;
-                (state, resp)
-            }
-            (false, false) => {
-                let (state, query) = self.build_pir_query(lane_state, index)?;
-                let resp = self.send_query(lane, &query).await?;
-                (state, resp.response)
-            }
-        };
-        
+
+        let (client_state, server_response) =
+            match (self.use_seed_expansion, self.use_binary_response) {
+                (true, true) => {
+                    let (state, query) = self.build_pir_query_seeded(lane_state, index)?;
+                    let resp = self.send_query_seeded_binary(lane, &query).await?;
+                    (state, resp)
+                }
+                (true, false) => {
+                    let (state, query) = self.build_pir_query_seeded(lane_state, index)?;
+                    let resp = self.send_query_seeded(lane, &query).await?;
+                    (state, resp.response)
+                }
+                (false, true) => {
+                    let (state, query) = self.build_pir_query(lane_state, index)?;
+                    let resp = self.send_query_binary(lane, &query).await?;
+                    (state, resp)
+                }
+                (false, false) => {
+                    let (state, query) = self.build_pir_query(lane_state, index)?;
+                    let resp = self.send_query(lane, &query).await?;
+                    (state, resp.response)
+                }
+            };
+
         let entry = extract_with_variant(
             &lane_state.crs,
             &client_state,
             &server_response,
             32,
             InspireVariant::OnePacking,
-        ).map_err(|e| ClientError::InvalidResponse(e.to_string()))?;
-        
+        )
+        .map_err(|e| ClientError::InvalidResponse(e.to_string()))?;
+
         let mut result = [0u8; 32];
         result.copy_from_slice(&entry[..32]);
         Ok(result)
     }
 
     /// Build a PIR query for the given index (full ciphertext)
-    fn build_pir_query(&self, lane_state: &LaneState, index: u64) -> Result<(ClientState, ClientQuery)> {
+    fn build_pir_query(
+        &self,
+        lane_state: &LaneState,
+        index: u64,
+    ) -> Result<(ClientState, ClientQuery)> {
         let mut sampler = GaussianSampler::new(lane_state.crs.params.sigma);
-        
+
         let (state, query) = pir_query(
             &lane_state.crs,
             index,
             &lane_state.shard_config,
             &lane_state.secret_key,
             &mut sampler,
-        ).map_err(|e| ClientError::InvalidResponse(format!("Failed to build query: {}", e)))?;
-        
+        )
+        .map_err(|e| ClientError::InvalidResponse(format!("Failed to build query: {}", e)))?;
+
         Ok((state, query))
     }
 
     /// Build a seeded PIR query for the given index (~50% smaller)
-    fn build_pir_query_seeded(&self, lane_state: &LaneState, index: u64) -> Result<(ClientState, SeededClientQuery)> {
+    fn build_pir_query_seeded(
+        &self,
+        lane_state: &LaneState,
+        index: u64,
+    ) -> Result<(ClientState, SeededClientQuery)> {
         let mut sampler = GaussianSampler::new(lane_state.crs.params.sigma);
-        
+
         let (state, query) = pir_query_seeded(
             &lane_state.crs,
             index,
             &lane_state.shard_config,
             &lane_state.secret_key,
             &mut sampler,
-        ).map_err(|e| ClientError::InvalidResponse(format!("Failed to build seeded query: {}", e)))?;
-        
+        )
+        .map_err(|e| {
+            ClientError::InvalidResponse(format!("Failed to build seeded query: {}", e))
+        })?;
+
         Ok((state, query))
     }
 
     /// Send a query to the server (full ciphertext)
     async fn send_query(&self, lane: Lane, query: &ClientQuery) -> Result<QueryResponse> {
         let url = format!("{}/query/{}", self.server_url, lane);
-        
-        let resp = self.http
+
+        let resp = self
+            .http
             .post(&url)
-            .json(&QueryRequest { query: query.clone() })
+            .json(&QueryRequest {
+                query: query.clone(),
+            })
             .send()
             .await?;
 
@@ -299,12 +316,19 @@ impl TwoLaneClient {
     }
 
     /// Send a seeded query to the server (~50% smaller)
-    async fn send_query_seeded(&self, lane: Lane, query: &SeededClientQuery) -> Result<QueryResponse> {
+    async fn send_query_seeded(
+        &self,
+        lane: Lane,
+        query: &SeededClientQuery,
+    ) -> Result<QueryResponse> {
         let url = format!("{}/query/{}/seeded", self.server_url, lane);
-        
-        let resp = self.http
+
+        let resp = self
+            .http
             .post(&url)
-            .json(&SeededQueryRequest { query: query.clone() })
+            .json(&SeededQueryRequest {
+                query: query.clone(),
+            })
             .send()
             .await?;
 
@@ -320,12 +344,19 @@ impl TwoLaneClient {
     }
 
     /// Send a seeded query with binary response (~75% smaller total)
-    async fn send_query_seeded_binary(&self, lane: Lane, query: &SeededClientQuery) -> Result<ServerResponse> {
+    async fn send_query_seeded_binary(
+        &self,
+        lane: Lane,
+        query: &SeededClientQuery,
+    ) -> Result<ServerResponse> {
         let url = format!("{}/query/{}/seeded/binary", self.server_url, lane);
-        
-        let resp = self.http
+
+        let resp = self
+            .http
             .post(&url)
-            .json(&SeededQueryRequest { query: query.clone() })
+            .json(&SeededQueryRequest {
+                query: query.clone(),
+            })
             .send()
             .await?;
 
@@ -337,18 +368,22 @@ impl TwoLaneClient {
         }
 
         let bytes = resp.bytes().await?;
-        let response = ServerResponse::from_binary(&bytes)
-            .map_err(|e| ClientError::InvalidResponse(format!("Failed to decode binary response: {}", e)))?;
+        let response = ServerResponse::from_binary(&bytes).map_err(|e| {
+            ClientError::InvalidResponse(format!("Failed to decode binary response: {}", e))
+        })?;
         Ok(response)
     }
 
     /// Send a query with binary response (~58% smaller)
     async fn send_query_binary(&self, lane: Lane, query: &ClientQuery) -> Result<ServerResponse> {
         let url = format!("{}/query/{}/binary", self.server_url, lane);
-        
-        let resp = self.http
+
+        let resp = self
+            .http
             .post(&url)
-            .json(&QueryRequest { query: query.clone() })
+            .json(&QueryRequest {
+                query: query.clone(),
+            })
             .send()
             .await?;
 
@@ -360,8 +395,9 @@ impl TwoLaneClient {
         }
 
         let bytes = resp.bytes().await?;
-        let response = ServerResponse::from_binary(&bytes)
-            .map_err(|e| ClientError::InvalidResponse(format!("Failed to decode binary response: {}", e)))?;
+        let response = ServerResponse::from_binary(&bytes).map_err(|e| {
+            ClientError::InvalidResponse(format!("Failed to decode binary response: {}", e))
+        })?;
         Ok(response)
     }
 
@@ -380,21 +416,17 @@ impl TwoLaneClient {
     /// Compute the database index for a contract/slot pair
     fn compute_index(&self, contract: &Address, slot: &StorageKey, lane: Lane) -> Result<u64> {
         match lane {
-            Lane::Hot => {
-                self.router.get_hot_index(contract, slot).ok_or_else(|| {
-                    ClientError::InvalidResponse(format!(
-                        "Contract {} not found in hot lane manifest or has invalid slot_count",
-                        hex::encode(contract)
-                    ))
-                })
-            }
-            Lane::Cold => {
-                self.router.get_cold_index(contract, slot).ok_or_else(|| {
-                    ClientError::LaneNotAvailable(
-                        "Cold lane not initialized (cold_total_entries = 0)".to_string()
-                    )
-                })
-            }
+            Lane::Hot => self.router.get_hot_index(contract, slot).ok_or_else(|| {
+                ClientError::InvalidResponse(format!(
+                    "Contract {} not found in hot lane manifest or has invalid slot_count",
+                    hex::encode(contract)
+                ))
+            }),
+            Lane::Cold => self.router.get_cold_index(contract, slot).ok_or_else(|| {
+                ClientError::LaneNotAvailable(
+                    "Cold lane not initialized (cold_total_entries = 0)".to_string(),
+                )
+            }),
         }
     }
 
@@ -417,13 +449,18 @@ impl TwoLaneClient {
     ///
     /// Returns (start_index, count) for the bucket containing this entry.
     /// The client must query within this range to find the exact entry.
-    /// 
+    ///
     /// This enables sparse lookups without downloading the full manifest.
-    pub fn lookup_bucket(&self, contract: &Address, slot: &StorageKey) -> Result<crate::BucketRange> {
-        let index = self.bucket_index.as_ref().ok_or_else(|| {
-            ClientError::LaneNotAvailable("Bucket index not loaded".to_string())
-        })?;
-        
+    pub fn lookup_bucket(
+        &self,
+        contract: &Address,
+        slot: &StorageKey,
+    ) -> Result<crate::BucketRange> {
+        let index = self
+            .bucket_index
+            .as_ref()
+            .ok_or_else(|| ClientError::LaneNotAvailable("Bucket index not loaded".to_string()))?;
+
         Ok(index.lookup_bucket(contract, slot))
     }
 
@@ -489,7 +526,7 @@ impl ClientBuilder {
         } else {
             inspire_core::HotLaneManifest::new(0)
         };
-        
+
         let router = LaneRouter::new(manifest);
         Ok(TwoLaneClient::with_options(
             router,
@@ -516,11 +553,11 @@ mod tests {
     fn test_client_routing() {
         let router = LaneRouter::new(create_test_manifest());
         let client = TwoLaneClient::new(router, "http://localhost:3000".into());
-        
+
         assert!(client.is_hot(&[0x11u8; 20]));
         assert!(client.is_hot(&[0x22u8; 20]));
         assert!(!client.is_hot(&[0x33u8; 20]));
-        
+
         assert_eq!(client.get_lane(&[0x11u8; 20]), Lane::Hot);
         assert_eq!(client.get_lane(&[0x33u8; 20]), Lane::Cold);
     }
@@ -529,7 +566,7 @@ mod tests {
     fn test_hot_contract_count() {
         let router = LaneRouter::new(create_test_manifest());
         let client = TwoLaneClient::new(router, "http://localhost:3000".into());
-        
+
         assert_eq!(client.hot_contract_count(), 2);
     }
 }

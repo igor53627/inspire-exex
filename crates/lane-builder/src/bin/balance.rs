@@ -9,7 +9,9 @@ use alloy_provider::ProviderBuilder;
 use clap::{Parser, ValueEnum};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use lane_builder::balance_extractor::{BalanceExtractor, BalanceExtractorConfig, load_addresses_from_file};
+use lane_builder::balance_extractor::{
+    load_addresses_from_file, BalanceExtractor, BalanceExtractorConfig,
+};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Network {

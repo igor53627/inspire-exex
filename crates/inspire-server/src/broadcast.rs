@@ -186,7 +186,7 @@ mod tests {
             block_number: 1,
             updates: vec![(0, 10)],
         };
-        
+
         // Should not panic with no receivers
         let count = broadcast.broadcast(delta);
         assert_eq!(count, 0);
@@ -196,15 +196,15 @@ mod tests {
     fn test_broadcast_with_receiver() {
         let broadcast = BucketBroadcast::new();
         let mut rx = broadcast.subscribe();
-        
+
         let delta = BucketDelta {
             block_number: 42,
             updates: vec![(100, 5), (200, 10)],
         };
-        
+
         let count = broadcast.broadcast(delta);
         assert_eq!(count, 1);
-        
+
         let received = rx.try_recv().unwrap();
         assert_eq!(received.block_number, 42);
         assert_eq!(received.updates.len(), 2);
@@ -214,13 +214,13 @@ mod tests {
     fn test_subscriber_count() {
         let broadcast = BucketBroadcast::new();
         assert_eq!(broadcast.subscriber_count(), 0);
-        
+
         let _rx1 = broadcast.subscribe();
         assert_eq!(broadcast.subscriber_count(), 1);
-        
+
         let _rx2 = broadcast.subscribe();
         assert_eq!(broadcast.subscriber_count(), 2);
-        
+
         drop(_rx1);
         // Note: receiver_count may not update immediately after drop
     }

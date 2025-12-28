@@ -30,7 +30,7 @@ use futures::TryStreamExt;
 use metrics::{counter, histogram};
 use reth_ethereum::exex::{ExExContext, ExExEvent, ExExNotification};
 use reth_ethereum::node::api::FullNodeComponents;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use crate::reload::ReloadClient;
 
@@ -78,7 +78,7 @@ pub async fn lane_updater_exex<Node: FullNodeComponents>(
     );
 
     let reload_client = ReloadClient::new(&config.server_url);
-    
+
     match reload_client.health().await {
         Ok(true) => info!("PIR server is healthy"),
         Ok(false) => warn!("PIR server health check failed"),
@@ -100,9 +100,9 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
         match &notification {
             ExExNotification::ChainCommitted { new } => {
                 let committed_range = new.range();
-                
+
                 counter!(METRIC_BLOCKS_PROCESSED).increment(1);
-                
+
                 info!(
                     chain = ?committed_range,
                     "Chain committed, checking for lane updates"
@@ -115,7 +115,7 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                             let latency_ms = start.elapsed().as_millis() as f64;
                             counter!(METRIC_RELOAD_TOTAL).increment(1);
                             histogram!(METRIC_RELOAD_DURATION_MS).record(latency_ms);
-                            
+
                             info!(
                                 old_block = ?result.old_block_number,
                                 new_block = ?result.new_block_number,
@@ -134,11 +134,12 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                     counter!(METRIC_DEBOUNCE_SKIPS).increment(1);
                 }
 
-                ctx.events.send(ExExEvent::FinishedHeight(new.tip().num_hash()))?;
+                ctx.events
+                    .send(ExExEvent::FinishedHeight(new.tip().num_hash()))?;
             }
             ExExNotification::ChainReverted { old } => {
                 counter!(METRIC_REVERTS).increment(1);
-                
+
                 warn!(
                     reverted_chain = ?old.range(),
                     "Chain reverted - triggering lane rebuild"
@@ -150,7 +151,7 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                         let latency_ms = start.elapsed().as_millis() as f64;
                         counter!(METRIC_RELOAD_TOTAL).increment(1);
                         histogram!(METRIC_RELOAD_DURATION_MS).record(latency_ms);
-                        
+
                         info!(
                             new_block = ?result.new_block_number,
                             duration_ms = %latency_ms,
@@ -166,7 +167,7 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
             }
             ExExNotification::ChainReorged { old, new } => {
                 counter!(METRIC_REORGS).increment(1);
-                
+
                 warn!(
                     from_chain = ?old.range(),
                     to_chain = ?new.range(),
@@ -179,7 +180,7 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                         let latency_ms = start.elapsed().as_millis() as f64;
                         counter!(METRIC_RELOAD_TOTAL).increment(1);
                         histogram!(METRIC_RELOAD_DURATION_MS).record(latency_ms);
-                        
+
                         info!(
                             new_block = ?result.new_block_number,
                             duration_ms = %latency_ms,
@@ -193,7 +194,8 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
                     }
                 }
 
-                ctx.events.send(ExExEvent::FinishedHeight(new.tip().num_hash()))?;
+                ctx.events
+                    .send(ExExEvent::FinishedHeight(new.tip().num_hash()))?;
             }
         }
     }
@@ -202,8 +204,6 @@ async fn lane_updater_loop<Node: FullNodeComponents>(
 }
 
 /// Trigger a lane database update
-async fn trigger_lane_update(
-    client: &ReloadClient,
-) -> anyhow::Result<crate::reload::ReloadResult> {
+async fn trigger_lane_update(client: &ReloadClient) -> anyhow::Result<crate::reload::ReloadResult> {
     client.reload().await
 }

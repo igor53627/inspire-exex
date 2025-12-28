@@ -142,7 +142,7 @@ impl TwoLaneConfig {
     pub fn compute_hash(&self) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         self.hot_entries.hash(&mut hasher);
         self.cold_entries.hash(&mut hasher);
@@ -171,8 +171,14 @@ mod tests {
     #[test]
     fn test_config_from_base_dir() {
         let config = TwoLaneConfig::from_base_dir("/data/pir");
-        assert_eq!(config.hot_lane_db, PathBuf::from("/data/pir/hot/encoded.bin"));
-        assert_eq!(config.cold_lane_crs, PathBuf::from("/data/pir/cold/crs.json"));
+        assert_eq!(
+            config.hot_lane_db,
+            PathBuf::from("/data/pir/hot/encoded.bin")
+        );
+        assert_eq!(
+            config.cold_lane_crs,
+            PathBuf::from("/data/pir/cold/crs.json")
+        );
     }
 
     #[test]
@@ -187,19 +193,19 @@ mod tests {
         let base = TwoLaneConfig::from_base_dir("/data/pir")
             .with_entries(100, 200)
             .with_hash();
-        
+
         // Same config should produce same hash
         let same = TwoLaneConfig::from_base_dir("/data/pir")
             .with_entries(100, 200)
             .with_hash();
         assert_eq!(base.config_hash, same.config_hash);
-        
+
         // Different hot entries should change hash
         let different_hot = TwoLaneConfig::from_base_dir("/data/pir")
             .with_entries(101, 200)
             .with_hash();
         assert_ne!(base.config_hash, different_hot.config_hash);
-        
+
         // Different cold entries should change hash
         let different_cold = TwoLaneConfig::from_base_dir("/data/pir")
             .with_entries(100, 201)

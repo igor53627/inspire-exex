@@ -72,7 +72,9 @@ pub const PIR_PARAMS: PirParams = PirParams {
 /// Error for parameter version mismatches
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParamsVersionError {
-    #[error("PIR params version mismatch: expected v{expected}, got v{actual}. Regenerate CRS/DB.")]
+    #[error(
+        "PIR params version mismatch: expected v{expected}, got v{actual}. Regenerate CRS/DB."
+    )]
     VersionMismatch { expected: u16, actual: u16 },
 }
 
@@ -169,7 +171,10 @@ mod tests {
         assert!(!old_params.is_compatible());
         assert!(matches!(
             old_params.validate(),
-            Err(ParamsVersionError::VersionMismatch { expected: 2, actual: 1 })
+            Err(ParamsVersionError::VersionMismatch {
+                expected: 2,
+                actual: 1
+            })
         ));
     }
 

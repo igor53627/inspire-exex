@@ -41,7 +41,7 @@ impl Drop for SecureSecretKey {
 /// This function provides an early check to fail fast with a clear error.
 pub fn check_webcrypto_available() -> Result<(), JsValue> {
     let mut test_bytes = [0u8; 8];
-    
+
     if getrandom::getrandom(&mut test_bytes).is_err() {
         return Err(PirError::CryptoUnavailable.into());
     }

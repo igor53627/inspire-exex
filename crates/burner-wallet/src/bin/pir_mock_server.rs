@@ -202,8 +202,12 @@ async fn query_seeded_binary(
 
     let expanded_query = req.query.expand();
 
-    let response = respond(state.crs.as_ref(), state.encoded_db.as_ref(), &expanded_query)
-        .map_err(|e| format!("PIR respond failed: {}", e))?;
+    let response = respond(
+        state.crs.as_ref(),
+        state.encoded_db.as_ref(),
+        &expanded_query,
+    )
+    .map_err(|e| format!("PIR respond failed: {}", e))?;
 
     let binary = response
         .to_binary()
@@ -216,8 +220,8 @@ async fn query_seeded_binary(
 
 /// Fetch block hash from Sepolia RPC
 async fn fetch_block_hash(block_number: u64) -> Result<String, String> {
-    let rpc_url = std::env::var("SEPOLIA_RPC_URL")
-        .unwrap_or_else(|_| "https://rpc.sepolia.org".to_string());
+    let rpc_url =
+        std::env::var("SEPOLIA_RPC_URL").unwrap_or_else(|_| "https://rpc.sepolia.org".to_string());
 
     let client = reqwest::Client::new();
     let block_hex = format!("0x{:x}", block_number);
@@ -259,8 +263,8 @@ async fn main() {
     let addresses: Vec<String> = balances.iter().map(|b| b.address.clone()).collect();
 
     let mut sampler = GaussianSampler::new(params.sigma);
-    let (crs, encoded_db, _sk) = setup(&params, &database, ENTRY_SIZE, &mut sampler)
-        .expect("PIR setup failed");
+    let (crs, encoded_db, _sk) =
+        setup(&params, &database, ENTRY_SIZE, &mut sampler).expect("PIR setup failed");
 
     tracing::info!(
         entries = encoded_db.config.total_entries,

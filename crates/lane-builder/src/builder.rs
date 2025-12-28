@@ -47,7 +47,10 @@ impl HotLaneBuilder {
         for sc in scored {
             self.extractor.add_contract(ContractStats {
                 address: sc.address,
-                name: sc.name.clone().unwrap_or_else(|| format!("0x{}", hex::encode(&sc.address[..6]))),
+                name: sc
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("0x{}", hex::encode(&sc.address[..6]))),
                 category: sc.category.clone().unwrap_or_else(|| "unknown".to_string()),
                 tx_count: sc.final_score,
                 storage_slots: 0,
@@ -78,19 +81,19 @@ impl HotLaneBuilder {
     /// Build the manifest and save to output directory
     pub fn build(self) -> anyhow::Result<HotLaneManifest> {
         std::fs::create_dir_all(&self.output_dir)?;
-        
+
         let manifest = self.extractor.build_manifest(self.block_number);
-        
+
         let manifest_path = self.output_dir.join("manifest.json");
         manifest.save(&manifest_path)?;
-        
+
         tracing::info!(
             contracts = manifest.contract_count(),
             entries = manifest.total_entries,
             path = %manifest_path.display(),
             "Hot lane manifest built"
         );
-        
+
         Ok(manifest)
     }
 
@@ -113,16 +116,16 @@ mod tests {
     #[test]
     fn test_builder_with_known_contracts() {
         let dir = tempdir().unwrap();
-        
+
         let manifest = HotLaneBuilder::new(dir.path())
             .at_block(12345)
             .load_known_contracts()
             .build()
             .unwrap();
-        
+
         assert!(manifest.contract_count() >= 4);
         assert_eq!(manifest.block_number, 12345);
-        
+
         let manifest_path = dir.path().join("manifest.json");
         assert!(manifest_path.exists());
     }

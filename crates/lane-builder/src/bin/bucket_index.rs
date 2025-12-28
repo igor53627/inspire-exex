@@ -193,7 +193,8 @@ fn compute_bucket_id(address: &[u8], slot: &[u8]) -> usize {
     // Take first 18 bits as bucket ID
     // hash[0] = bits 0-7, hash[1] = bits 8-15, hash[2] = bits 16-23
     // We need bits 0-17 (18 bits)
-    let bucket_id = ((hash[0] as usize) << 10) | ((hash[1] as usize) << 2) | ((hash[2] as usize) >> 6);
+    let bucket_id =
+        ((hash[0] as usize) << 10) | ((hash[1] as usize) << 2) | ((hash[2] as usize) >> 6);
 
     bucket_id & (NUM_BUCKETS - 1) // Mask to ensure in range
 }

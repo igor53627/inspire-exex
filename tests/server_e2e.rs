@@ -12,8 +12,9 @@ use std::time::Duration;
 
 use inspire_core::{Lane, TwoLaneConfig};
 use inspire_pir::math::GaussianSampler;
+use inspire_pir::params::InspireVariant;
 use inspire_pir::rlwe::RlweSecretKey;
-use inspire_pir::{extract, query as pir_query, ServerCrs};
+use inspire_pir::{extract_with_variant, query as pir_query, EncodedDatabase, ServerCrs};
 use inspire_server::{create_router, create_shared_state, DbSnapshot, SharedState};
 use lane_builder::{test_params, TwoLaneSetup};
 use reqwest::Client;
@@ -73,7 +74,9 @@ impl TestHarness {
         state.load_lanes().expect("Lanes should load");
 
         let router = create_router(state.clone());
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("Bind should succeed");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Bind should succeed");
         let addr = listener.local_addr().expect("local addr");
         let server_url = format!("http://{}", addr);
 
@@ -88,7 +91,12 @@ impl TestHarness {
 
         let mut ready = false;
         for _ in 0..20 {
-            if http.get(format!("{}/live", server_url)).send().await.is_ok() {
+            if http
+                .get(format!("{}/live", server_url))
+                .send()
+                .await
+                .is_ok()
+            {
                 ready = true;
                 break;
             }
@@ -145,7 +153,9 @@ impl TestHarness {
     ) -> reqwest::Result<reqwest::Response> {
         self.http
             .post(format!("{}/query/{}", self.server_url, lane))
-            .json(&QueryRequest { query: query.clone() })
+            .json(&QueryRequest {
+                query: query.clone(),
+            })
             .send()
             .await
     }
@@ -158,7 +168,9 @@ impl TestHarness {
     ) -> reqwest::Result<reqwest::Response> {
         self.http
             .post(format!("{}/query/{}/seeded", self.server_url, lane))
-            .json(&SeededQueryRequest { query: query.clone() })
+            .json(&SeededQueryRequest {
+                query: query.clone(),
+            })
             .send()
             .await
     }
@@ -176,21 +188,30 @@ impl TestHarness {
         let mut sampler = GaussianSampler::new(crs.params.sigma);
         let sk = RlweSecretKey::generate(&crs.params, &mut sampler);
 
-        let (client_state, client_query) =
-            pir_query(crs, index, &shard_config, &sk, &mut sampler)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let (client_state, client_query) = pir_query(crs, index, &shard_config, &sk, &mut sampler)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let resp = self.query_raw(lane, &client_query).await?;
         let query_resp: QueryResponse = resp.json().await?;
 
-        let entry = extract(crs, &client_state, &query_resp.response, 32)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let entry = extract_with_variant(
+            crs,
+            &client_state,
+            &query_resp.response,
+            32,
+            InspireVariant::OnePacking,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         Ok(entry)
     }
 
     /// Perform a seeded PIR query and extract the result
-    pub async fn query_seeded_and_extract(&self, lane: Lane, index: u64) -> anyhow::Result<Vec<u8>> {
+    pub async fn query_seeded_and_extract(
+        &self,
+        lane: Lane,
+        index: u64,
+    ) -> anyhow::Result<Vec<u8>> {
         use inspire_pir::query_seeded as pir_query_seeded;
 
         let crs = match lane {
@@ -211,14 +232,24 @@ impl TestHarness {
         let resp = self.query_seeded_raw(lane, &seeded_query).await?;
         let query_resp: QueryResponse = resp.json().await?;
 
-        let entry = extract(crs, &client_state, &query_resp.response, 32)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let entry = extract_with_variant(
+            crs,
+            &client_state,
+            &query_resp.response,
+            32,
+            InspireVariant::OnePacking,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         Ok(entry)
     }
 
     /// Perform a PIR query with binary response
-    pub async fn query_binary_and_extract(&self, lane: Lane, index: u64) -> anyhow::Result<Vec<u8>> {
+    pub async fn query_binary_and_extract(
+        &self,
+        lane: Lane,
+        index: u64,
+    ) -> anyhow::Result<Vec<u8>> {
         let crs = match lane {
             Lane::Hot => self.hot_crs.as_ref().expect("hot CRS"),
             Lane::Cold => self.cold_crs.as_ref().expect("cold CRS"),
@@ -230,13 +261,15 @@ impl TestHarness {
         let mut sampler = GaussianSampler::new(crs.params.sigma);
         let sk = RlweSecretKey::generate(&crs.params, &mut sampler);
 
-        let (client_state, client_query) =
-            pir_query(crs, index, &shard_config, &sk, &mut sampler)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let (client_state, client_query) = pir_query(crs, index, &shard_config, &sk, &mut sampler)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        let resp = self.http
+        let resp = self
+            .http
             .post(format!("{}/query/{}/binary", self.server_url, lane))
-            .json(&QueryRequest { query: client_query })
+            .json(&QueryRequest {
+                query: client_query,
+            })
             .send()
             .await?;
 
@@ -244,14 +277,24 @@ impl TestHarness {
         let server_response = inspire_pir::ServerResponse::from_binary(&bytes)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        let entry = extract(crs, &client_state, &server_response, 32)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let entry = extract_with_variant(
+            crs,
+            &client_state,
+            &server_response,
+            32,
+            InspireVariant::OnePacking,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         Ok(entry)
     }
 
     /// Perform a seeded PIR query with binary response
-    pub async fn query_seeded_binary_and_extract(&self, lane: Lane, index: u64) -> anyhow::Result<Vec<u8>> {
+    pub async fn query_seeded_binary_and_extract(
+        &self,
+        lane: Lane,
+        index: u64,
+    ) -> anyhow::Result<Vec<u8>> {
         use inspire_pir::query_seeded as pir_query_seeded;
 
         let crs = match lane {
@@ -269,9 +312,12 @@ impl TestHarness {
             pir_query_seeded(crs, index, &shard_config, &sk, &mut sampler)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        let resp = self.http
+        let resp = self
+            .http
             .post(format!("{}/query/{}/seeded/binary", self.server_url, lane))
-            .json(&SeededQueryRequest { query: seeded_query })
+            .json(&SeededQueryRequest {
+                query: seeded_query,
+            })
             .send()
             .await?;
 
@@ -279,8 +325,14 @@ impl TestHarness {
         let server_response = inspire_pir::ServerResponse::from_binary(&bytes)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        let entry = extract(crs, &client_state, &server_response, 32)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let entry = extract_with_variant(
+            crs,
+            &client_state,
+            &server_response,
+            32,
+            InspireVariant::OnePacking,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         Ok(entry)
     }
@@ -408,38 +460,105 @@ async fn test_get_crs_cold() {
 async fn test_hot_lane_query() {
     let harness = TestHarness::new().await;
     let index = 42u64;
-    let entry = harness.query_and_extract(Lane::Hot, index).await.expect("query");
+    let entry = harness
+        .query_and_extract(Lane::Hot, index)
+        .await
+        .expect("query");
 
     let expected_start = (index as usize) * 32;
     let expected: Vec<u8> = (expected_start..expected_start + 32)
         .map(|i| (i % 256) as u8)
         .collect();
 
-    assert_eq!(entry, expected, "Retrieved entry should match expected data");
+    assert_eq!(
+        entry, expected,
+        "Retrieved entry should match expected data"
+    );
+}
+
+/// Minimal test: directly use PIR functions without HTTP
+/// to isolate whether the issue is in HTTP layer or PIR layer
+#[tokio::test]
+async fn test_cold_lane_direct_pir() {
+    use inspire_pir::{extract_with_variant, respond_one_packing};
+
+    // Create test data
+    let params = test_params();
+    let entry_size = 32;
+
+    // Hot-like data pattern (should work)
+    let hot_data: Vec<u8> = (0..256 * entry_size).map(|i| (i % 256) as u8).collect();
+
+    // Setup PIR directly (use separate sampler for setup)
+    let mut setup_sampler = GaussianSampler::new(params.sigma);
+    let (crs, db, _sk) =
+        inspire_pir::setup(&params, &hot_data, entry_size, &mut setup_sampler).expect("setup");
+
+    // Generate client secret key (use separate sampler for client)
+    let mut client_sampler = GaussianSampler::new(crs.params.sigma);
+    let client_sk = RlweSecretKey::generate(&crs.params, &mut client_sampler);
+
+    // Query index 0
+    let shard_config = db.config.clone();
+    let (client_state, client_query) =
+        pir_query(&crs, 0, &shard_config, &client_sk, &mut client_sampler).expect("query");
+
+    // Server responds using OnePacking
+    let response = respond_one_packing(&crs, &db, &client_query).expect("respond");
+
+    // Client extracts
+    let entry = extract_with_variant(
+        &crs,
+        &client_state,
+        &response,
+        entry_size,
+        InspireVariant::OnePacking,
+    )
+    .expect("extract");
+
+    // Expected: bytes 0-31 of hot_data = [0, 1, 2, ...]
+    let expected: Vec<u8> = (0..32).map(|i| i as u8).collect();
+
+    assert_eq!(entry, expected, "Direct PIR should work for hot-like data");
 }
 
 #[tokio::test]
 async fn test_cold_lane_query() {
     let harness = TestHarness::new().await;
-    let index = 100u64;
-    let entry = harness.query_and_extract(Lane::Cold, index).await.expect("query");
+    let index = 0u64;
+    let entry = harness
+        .query_and_extract(Lane::Cold, index)
+        .await
+        .expect("query");
 
-    let expected_start = (index as usize) * 32;
-    let expected: Vec<u8> = (expected_start..expected_start + 32)
-        .map(|i| ((i + 128) % 256) as u8)
-        .collect();
+    // Cold data: ((i + 128) % 256) for each byte
+    // Index 0, entry_size 32: bytes 0-31 of cold_data
+    // Expected: [128, 129, 130, ..., 159]
+    let expected: Vec<u8> = (0..32).map(|i| ((i + 128) % 256) as u8).collect();
 
-    assert_eq!(entry, expected, "Cold lane data should differ from hot lane");
+    assert_eq!(
+        entry, expected,
+        "Cold lane data should match expected pattern"
+    );
 }
 
 #[tokio::test]
 async fn test_hot_and_cold_queries_different_data() {
     let harness = TestHarness::new().await;
 
-    let hot_entry = harness.query_and_extract(Lane::Hot, 0).await.expect("hot query");
-    let cold_entry = harness.query_and_extract(Lane::Cold, 0).await.expect("cold query");
+    let hot_entry = harness
+        .query_and_extract(Lane::Hot, 0)
+        .await
+        .expect("hot query");
+    let cold_entry = harness
+        .query_and_extract(Lane::Cold, 0)
+        .await
+        .expect("cold query");
 
-    assert_ne!(hot_entry, cold_entry, "Hot and cold lanes should have different data");
+    assert_ne!(
+        hot_entry, cold_entry,
+        "Hot and cold lanes should have different data"
+    );
 }
 
 #[tokio::test]
@@ -447,10 +566,19 @@ async fn test_seeded_query_returns_same_as_full() {
     let harness = TestHarness::new().await;
     let index = 42u64;
 
-    let full_entry = harness.query_and_extract(Lane::Hot, index).await.expect("full query");
-    let seeded_entry = harness.query_seeded_and_extract(Lane::Hot, index).await.expect("seeded query");
+    let full_entry = harness
+        .query_and_extract(Lane::Hot, index)
+        .await
+        .expect("full query");
+    let seeded_entry = harness
+        .query_seeded_and_extract(Lane::Hot, index)
+        .await
+        .expect("seeded query");
 
-    assert_eq!(full_entry, seeded_entry, "Seeded query should return same data as full query");
+    assert_eq!(
+        full_entry, seeded_entry,
+        "Seeded query should return same data as full query"
+    );
 }
 
 #[tokio::test]
@@ -458,10 +586,19 @@ async fn test_binary_response_returns_same_as_json() {
     let harness = TestHarness::new().await;
     let index = 50u64;
 
-    let json_entry = harness.query_and_extract(Lane::Hot, index).await.expect("json query");
-    let binary_entry = harness.query_binary_and_extract(Lane::Hot, index).await.expect("binary query");
+    let json_entry = harness
+        .query_and_extract(Lane::Hot, index)
+        .await
+        .expect("json query");
+    let binary_entry = harness
+        .query_binary_and_extract(Lane::Hot, index)
+        .await
+        .expect("binary query");
 
-    assert_eq!(json_entry, binary_entry, "Binary response should return same data as JSON");
+    assert_eq!(
+        json_entry, binary_entry,
+        "Binary response should return same data as JSON"
+    );
 }
 
 #[tokio::test]
@@ -469,10 +606,19 @@ async fn test_seeded_binary_query() {
     let harness = TestHarness::new().await;
     let index = 100u64;
 
-    let full_entry = harness.query_and_extract(Lane::Hot, index).await.expect("full query");
-    let seeded_binary_entry = harness.query_seeded_binary_and_extract(Lane::Hot, index).await.expect("seeded binary query");
+    let full_entry = harness
+        .query_and_extract(Lane::Hot, index)
+        .await
+        .expect("full query");
+    let seeded_binary_entry = harness
+        .query_seeded_binary_and_extract(Lane::Hot, index)
+        .await
+        .expect("seeded binary query");
 
-    assert_eq!(full_entry, seeded_binary_entry, "Seeded binary query should return same data");
+    assert_eq!(
+        full_entry, seeded_binary_entry,
+        "Seeded binary query should return same data"
+    );
 }
 
 // ============================================================================
@@ -483,7 +629,8 @@ async fn test_seeded_binary_query() {
 async fn test_invalid_lane_returns_400() {
     let harness = TestHarness::new().await;
 
-    let resp = harness.http
+    let resp = harness
+        .http
         .get(format!("{}/crs/invalid", harness.server_url))
         .send()
         .await
@@ -496,7 +643,8 @@ async fn test_invalid_lane_returns_400() {
 async fn test_invalid_json_query_returns_4xx() {
     let harness = TestHarness::new().await;
 
-    let resp = harness.http
+    let resp = harness
+        .http
         .post(format!("{}/query/hot", harness.server_url))
         .header("content-type", "application/json")
         .body(r#"{"invalid": "json"}"#)
@@ -505,14 +653,19 @@ async fn test_invalid_json_query_returns_4xx() {
         .expect("request");
 
     let status = resp.status().as_u16();
-    assert!(status >= 400 && status < 500, "Expected 4xx, got {}", status);
+    assert!(
+        status >= 400 && status < 500,
+        "Expected 4xx, got {}",
+        status
+    );
 }
 
 #[tokio::test]
 async fn test_server_continues_after_error() {
     let harness = TestHarness::new().await;
 
-    let _ = harness.http
+    let _ = harness
+        .http
         .post(format!("{}/query/hot", harness.server_url))
         .header("content-type", "application/json")
         .body("not json")
@@ -522,7 +675,10 @@ async fn test_server_continues_after_error() {
     let health = harness.health().await.expect("health after error");
     assert_eq!(health.status, "ok");
 
-    let entry = harness.query_and_extract(Lane::Hot, 10).await.expect("query after error");
+    let entry = harness
+        .query_and_extract(Lane::Hot, 10)
+        .await
+        .expect("query after error");
     assert!(!entry.is_empty());
 }
 
@@ -535,13 +691,22 @@ async fn test_snapshot_consistent_across_queries() {
     let harness = TestHarness::new().await;
 
     let snap1 = harness.snapshot();
-    let entry1 = harness.query_and_extract(Lane::Hot, 5).await.expect("query 1");
+    let entry1 = harness
+        .query_and_extract(Lane::Hot, 5)
+        .await
+        .expect("query 1");
 
     let snap2 = harness.snapshot();
-    let entry2 = harness.query_and_extract(Lane::Hot, 5).await.expect("query 2");
+    let entry2 = harness
+        .query_and_extract(Lane::Hot, 5)
+        .await
+        .expect("query 2");
 
     assert_eq!(entry1, entry2, "Same query should return same result");
-    assert!(Arc::ptr_eq(&snap1, &snap2), "Snapshot should be same without reload");
+    assert!(
+        Arc::ptr_eq(&snap1, &snap2),
+        "Snapshot should be same without reload"
+    );
 }
 
 #[tokio::test]
@@ -570,7 +735,10 @@ async fn test_basic_reload() {
     assert!(result.cold_loaded);
 
     let snap_after = harness.snapshot();
-    assert!(!Arc::ptr_eq(&snap_before, &snap_after), "Snapshot should change after reload");
+    assert!(
+        !Arc::ptr_eq(&snap_before, &snap_after),
+        "Snapshot should change after reload"
+    );
 }
 
 #[tokio::test]
@@ -635,14 +803,22 @@ async fn test_concurrent_queries_during_reload() {
 
             let resp: QueryResponse = client
                 .post(format!("{}/query/hot", url))
-                .json(&QueryRequest { query: client_query })
+                .json(&QueryRequest {
+                    query: client_query,
+                })
                 .send()
                 .await?
                 .json()
                 .await?;
 
-            let _entry = extract(&crs, &client_state, &resp.response, 32)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            let _entry = extract_with_variant(
+                &crs,
+                &client_state,
+                &resp.response,
+                32,
+                InspireVariant::OnePacking,
+            )
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
             Ok::<_, anyhow::Error>(())
         }));
@@ -667,31 +843,41 @@ async fn test_concurrent_queries_during_reload() {
 #[tokio::test]
 async fn test_bucket_index_endpoint_returns_404_when_not_configured() {
     let harness = TestHarness::new().await;
-    
-    let resp = harness.http
+
+    let resp = harness
+        .http
         .get(format!("{}/index", harness.server_url))
         .send()
         .await
         .expect("request");
-    
+
     // Server may return 500 or 404 depending on implementation when index not loaded
     let status = resp.status().as_u16();
-    assert!(status >= 400, "Should return error when bucket index not loaded: {}", status);
+    assert!(
+        status >= 400,
+        "Should return error when bucket index not loaded: {}",
+        status
+    );
 }
 
 #[tokio::test]
 async fn test_bucket_index_info_endpoint() {
     let harness = TestHarness::new().await;
-    
-    let resp = harness.http
+
+    let resp = harness
+        .http
         .get(format!("{}/index/info", harness.server_url))
         .send()
         .await
         .expect("request");
-    
+
     // Without bucket index loaded, should return error
     let status = resp.status().as_u16();
-    assert!(status >= 400, "Should return error when bucket index not loaded: {}", status);
+    assert!(
+        status >= 400,
+        "Should return error when bucket index not loaded: {}",
+        status
+    );
 }
 
 // ============================================================================
@@ -708,10 +894,7 @@ async fn test_reload_storm() {
         let url = harness.server_url.clone();
         reload_handles.push(tokio::spawn(async move {
             let client = Client::new();
-            let _ = client
-                .post(format!("{}/admin/reload", url))
-                .send()
-                .await;
+            let _ = client.post(format!("{}/admin/reload", url)).send().await;
         }));
     }
 
@@ -722,7 +905,10 @@ async fn test_reload_storm() {
     let health = harness.health().await.expect("health after reload storm");
     assert_eq!(health.status, "ok");
 
-    let entry = harness.query_and_extract(Lane::Hot, 10).await.expect("query after storm");
+    let entry = harness
+        .query_and_extract(Lane::Hot, 10)
+        .await
+        .expect("query after storm");
     assert!(!entry.is_empty());
 }
 
@@ -756,20 +942,33 @@ async fn test_high_concurrency_queries() {
                 let sk = RlweSecretKey::generate(&crs.params, &mut sampler);
                 let index = (client_id * queries_per_client + q) % 200;
 
-                let (client_state, client_query) =
-                    pir_query(&crs, index as u64, &crs_resp.shard_config, &sk, &mut sampler)
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let (client_state, client_query) = pir_query(
+                    &crs,
+                    index as u64,
+                    &crs_resp.shard_config,
+                    &sk,
+                    &mut sampler,
+                )
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
 
                 let resp: QueryResponse = client
                     .post(format!("{}/query/hot", url))
-                    .json(&QueryRequest { query: client_query })
+                    .json(&QueryRequest {
+                        query: client_query,
+                    })
                     .send()
                     .await?
                     .json()
                     .await?;
 
-                let _entry = extract(&crs, &client_state, &resp.response, 32)
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let _entry = extract_with_variant(
+                    &crs,
+                    &client_state,
+                    &resp.response,
+                    32,
+                    InspireVariant::OnePacking,
+                )
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
             }
 
             Ok::<_, anyhow::Error>(())

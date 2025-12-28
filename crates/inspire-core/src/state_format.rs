@@ -67,9 +67,7 @@ impl StateHeader {
     /// Parse header from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, StateFormatError> {
         if data.len() < STATE_HEADER_SIZE {
-            return Err(StateFormatError::HeaderTooShort {
-                actual: data.len(),
-            });
+            return Err(StateFormatError::HeaderTooShort { actual: data.len() });
         }
 
         let magic: [u8; 4] = data[0..4].try_into().unwrap();
@@ -117,7 +115,11 @@ pub struct StorageEntry {
 impl StorageEntry {
     /// Create a new entry
     pub fn new(address: [u8; 20], slot: [u8; 32], value: [u8; 32]) -> Self {
-        Self { address, slot, value }
+        Self {
+            address,
+            slot,
+            value,
+        }
     }
 
     /// Serialize entry to bytes
@@ -132,9 +134,7 @@ impl StorageEntry {
     /// Parse entry from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, StateFormatError> {
         if data.len() < STATE_ENTRY_SIZE {
-            return Err(StateFormatError::EntryTooShort {
-                actual: data.len(),
-            });
+            return Err(StateFormatError::EntryTooShort { actual: data.len() });
         }
 
         Ok(Self {
@@ -162,16 +162,32 @@ impl core::fmt::Display for StateFormatError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             StateFormatError::HeaderTooShort { actual } => {
-                write!(f, "Header too short: need {} bytes, got {}", STATE_HEADER_SIZE, actual)
+                write!(
+                    f,
+                    "Header too short: need {} bytes, got {}",
+                    STATE_HEADER_SIZE, actual
+                )
             }
             StateFormatError::InvalidMagic { actual } => {
-                write!(f, "Invalid magic: expected {:?}, got {:?}", STATE_MAGIC, actual)
+                write!(
+                    f,
+                    "Invalid magic: expected {:?}, got {:?}",
+                    STATE_MAGIC, actual
+                )
             }
             StateFormatError::EntryTooShort { actual } => {
-                write!(f, "Entry too short: need {} bytes, got {}", STATE_ENTRY_SIZE, actual)
+                write!(
+                    f,
+                    "Entry too short: need {} bytes, got {}",
+                    STATE_ENTRY_SIZE, actual
+                )
             }
             StateFormatError::SizeMismatch { expected, actual } => {
-                write!(f, "File size mismatch: expected {} bytes, got {}", expected, actual)
+                write!(
+                    f,
+                    "File size mismatch: expected {} bytes, got {}",
+                    expected, actual
+                )
             }
         }
     }

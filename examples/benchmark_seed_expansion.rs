@@ -12,15 +12,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("=======================================\n");
 
     let configs = [
-        ("d=256 (test)", InspireParams {
-            ring_dim: 256,
-            q: 1152921504606830593,
-            p: 65536,
-            sigma: 3.2,
-            gadget_base: 1 << 20,
-            gadget_len: 3,
-            security_level: inspire_pir::params::SecurityLevel::Bits128,
-        }),
+        (
+            "d=256 (test)",
+            InspireParams {
+                ring_dim: 256,
+                q: 1152921504606830593,
+                p: 65536,
+                sigma: 3.2,
+                gadget_base: 1 << 20,
+                gadget_len: 3,
+                security_level: inspire_pir::params::SecurityLevel::Bits128,
+            },
+        ),
         ("d=2048 (production)", InspireParams::secure_128_d2048()),
     ];
 
@@ -28,9 +31,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("Configuration: {}", name);
         println!("  Ring dimension: {}", params.ring_dim);
         println!("  Gadget length: {}", params.gadget_len);
-        
+
         let mut sampler = GaussianSampler::new(params.sigma);
-        
+
         let entry_size = 32;
         let num_entries = params.ring_dim;
         let database: Vec<u8> = (0..(num_entries * entry_size))
@@ -41,10 +44,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .map_err(|e| format!("Setup failed: {}", e))?;
 
         let target_index = 42u64;
-        let (_, regular_query) = query(&crs, target_index, &encoded_db.config, &rlwe_sk, &mut sampler)
-            .map_err(|e| format!("Query failed: {}", e))?;
-        let (_, seeded_query) = query_seeded(&crs, target_index, &encoded_db.config, &rlwe_sk, &mut sampler)
-            .map_err(|e| format!("Seeded query failed: {}", e))?;
+        let (_, regular_query) = query(
+            &crs,
+            target_index,
+            &encoded_db.config,
+            &rlwe_sk,
+            &mut sampler,
+        )
+        .map_err(|e| format!("Query failed: {}", e))?;
+        let (_, seeded_query) = query_seeded(
+            &crs,
+            target_index,
+            &encoded_db.config,
+            &rlwe_sk,
+            &mut sampler,
+        )
+        .map_err(|e| format!("Seeded query failed: {}", e))?;
 
         let regular_json = serde_json::to_vec(&regular_query)?;
         let seeded_json = serde_json::to_vec(&seeded_query)?;
@@ -53,8 +68,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let seeded_size = seeded_json.len();
         let reduction = 100.0 * (1.0 - (seeded_size as f64 / regular_size as f64));
 
-        println!("  Regular query size: {} bytes ({:.1} KB)", regular_size, regular_size as f64 / 1024.0);
-        println!("  Seeded query size:  {} bytes ({:.1} KB)", seeded_size, seeded_size as f64 / 1024.0);
+        println!(
+            "  Regular query size: {} bytes ({:.1} KB)",
+            regular_size,
+            regular_size as f64 / 1024.0
+        );
+        println!(
+            "  Seeded query size:  {} bytes ({:.1} KB)",
+            seeded_size,
+            seeded_size as f64 / 1024.0
+        );
         println!("  Reduction: {:.1}%", reduction);
 
         let expanded = seeded_query.expand();
