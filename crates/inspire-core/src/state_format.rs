@@ -29,7 +29,8 @@ pub struct StateHeader {
     pub block_number: u64,
     /// Ethereum chain ID
     pub chain_id: u64,
-    /// Block hash (zero if unknown)
+    /// UBT root hash for verification (or block hash, or zero if unknown)
+    /// When synced via inspire-updater, this contains the UBT root from ubt_getRoot
     pub block_hash: [u8; 32],
 }
 

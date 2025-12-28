@@ -1,3 +1,4 @@
+use alloy_primitives::hex;
 use std::time::Duration;
 use tokio::time::interval;
 use tracing::{error, info, warn};
@@ -85,13 +86,40 @@ impl UpdaterService {
         info!(
             block = current_block,
             entries = entries.len(),
-            "Initial sync complete"
+            "Initial sync complete, fetching UBT root for verification"
         );
 
-        self.state.load_from_dump(current_block, entries.clone());
-        let path = self.writer.write_full_state(&entries, current_block).await?;
+        // Fetch UBT root for the current block (only works for head block)
+        let ubt_root = match self.rpc.ubt_get_root(current_block).await {
+            Ok(resp) => {
+                info!(
+                    block = resp.block_number,
+                    root = %hex::encode(resp.root.0),
+                    "UBT root fetched for verification"
+                );
+                resp.root.0
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    block = current_block,
+                    "Failed to fetch UBT root (block may have advanced), using zero hash"
+                );
+                [0u8; 32]
+            }
+        };
 
-        info!(path = %path.display(), "Wrote state.bin");
+        self.state.load_from_dump(current_block, entries.clone());
+        let path = self
+            .writer
+            .write_full_state_with_ubt(&entries, current_block, ubt_root)
+            .await?;
+
+        info!(
+            path = %path.display(),
+            ubt_root = %hex::encode(ubt_root),
+            "Wrote state.bin with UBT root"
+        );
 
         // Trigger PIR server reload
         if let Err(e) = self.reload.reload().await {

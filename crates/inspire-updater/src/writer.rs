@@ -112,13 +112,23 @@ impl ShardWriter {
         Ok(())
     }
 
-    /// Write full state dump
+    /// Write full state dump (without UBT root)
     pub async fn write_full_state(
         &self,
         entries: &[RpcStorageEntry],
         block_number: u64,
     ) -> anyhow::Result<std::path::PathBuf> {
         self.write_state_file(entries, block_number, [0u8; 32])
+    }
+
+    /// Write full state dump with UBT root for verification
+    pub async fn write_full_state_with_ubt(
+        &self,
+        entries: &[RpcStorageEntry],
+        block_number: u64,
+        ubt_root: [u8; 32],
+    ) -> anyhow::Result<std::path::PathBuf> {
+        self.write_state_file(entries, block_number, ubt_root)
     }
 }
 

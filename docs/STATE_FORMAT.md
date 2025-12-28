@@ -28,7 +28,7 @@ This document specifies the `state.bin` format for PIR database generation.
 | 8 | 8 | entry_count | Number of entries |
 | 16 | 8 | block_number | Snapshot block number |
 | 24 | 8 | chain_id | Ethereum chain ID |
-| 32 | 32 | block_hash | Block hash (zero if unknown) |
+| 32 | 32 | block_hash | UBT root hash for verification (or block hash, zero if unknown) |
 
 All integers are little-endian.
 
