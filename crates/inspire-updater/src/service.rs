@@ -52,6 +52,8 @@ pub struct UpdaterService {
     state: StateTracker,
     writer: ShardWriter,
     reload: ReloadClient,
+    /// Whether we've verified UBT root since last full sync
+    ubt_verified: bool,
 }
 
 impl UpdaterService {
@@ -67,6 +69,7 @@ impl UpdaterService {
             state,
             writer,
             reload,
+            ubt_verified: false,
         })
     }
 
@@ -163,6 +166,10 @@ impl UpdaterService {
         let last_block = self.state.last_block().unwrap_or(0);
 
         if current_block <= last_block {
+            // We're caught up - verify UBT root if not yet done
+            if !self.ubt_verified {
+                self.verify_ubt_root(current_block).await;
+            }
             return Ok(()); // No new blocks
         }
 
@@ -215,8 +222,34 @@ impl UpdaterService {
                 // No deltas but still update block number
                 self.state.apply_entries(to_block, vec![]);
             }
+
+            // If we caught up to head, verify UBT
+            if to_block == current_block && !self.ubt_verified {
+                self.verify_ubt_root(current_block).await;
+            }
         }
 
         Ok(())
+    }
+
+    /// Verify UBT root matches our state (called when caught up to head)
+    async fn verify_ubt_root(&mut self, block: u64) {
+        match self.rpc.ubt_get_root(block).await {
+            Ok(resp) => {
+                info!(
+                    block = resp.block_number,
+                    ubt_root = %hex::encode(resp.root.0),
+                    "[OK] UBT root verified at head block"
+                );
+                self.ubt_verified = true;
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    block,
+                    "Failed to verify UBT root"
+                );
+            }
+        }
     }
 }
