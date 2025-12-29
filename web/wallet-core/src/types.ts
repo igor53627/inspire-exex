@@ -150,3 +150,19 @@ export interface BucketIndexInfo {
   numBuckets: number;
   blockNumber?: bigint;
 }
+
+export interface RangeDeltaInfoResponse {
+  current_block: number;
+  ranges: Array<{
+    blocks_covered: number;
+    offset: number;
+    size: number;
+  }>;
+}
+
+export interface RangeSyncResult {
+  blockNumber: bigint;
+  rangeIndex: number;
+  blocksCovered: number;
+  bytesDownloaded: number;
+}

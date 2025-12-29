@@ -11,6 +11,8 @@ export type {
   SnapshotError,
   BucketRange,
   BucketIndexInfo,
+  RangeDeltaInfoResponse,
+  RangeSyncResult,
 } from './types.js';
 export {
   BALANCE_RECORD_SIZE,

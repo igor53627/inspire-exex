@@ -1,11 +1,13 @@
-import type { BalanceMetadata, BucketRange } from './types.js';
+import type { BalanceMetadata, BucketRange, RangeDeltaInfoResponse, RangeSyncResult } from './types.js';
 /**
  * WASM BucketIndex wrapper for TypeScript
  */
 export declare class BucketIndexWrapper {
     private index;
-    constructor(index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>);
+    private _blockNumber;
+    constructor(index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>, blockNumber?: bigint);
     get totalEntries(): bigint;
+    get blockNumber(): bigint;
     /**
      * Look up bucket range for an (address, slot) pair
      */
@@ -15,6 +17,11 @@ export declare class BucketIndexWrapper {
      * @returns Block number the delta applies to
      */
     applyDelta(data: Uint8Array): bigint;
+    /**
+     * Apply a range delta (from /index/deltas endpoint)
+     * @returns Block number after applying the delta
+     */
+    applyRangeDelta(data: Uint8Array): bigint;
     dispose(): void;
 }
 export declare class PirBalanceClient {
@@ -33,9 +40,23 @@ export declare class PirBalanceClient {
         usdc: bigint;
     } | null>;
     /**
-     * Fetch the bucket index for sparse lookups (~150 KB download)
+     * Fetch the bucket index for sparse lookups (~512 KB uncompressed from /index/raw)
      */
     fetchBucketIndex(): Promise<BucketIndexWrapper>;
+    /**
+     * Fetch range delta info for efficient sync
+     */
+    fetchRangeDeltaInfo(): Promise<RangeDeltaInfoResponse>;
+    /**
+     * Sync bucket index using range-based delta
+     *
+     * Downloads only the smallest range covering the sync gap, then applies it.
+     * Much more efficient than re-downloading the full 256KB index.
+     *
+     * @param bucketIndex - Existing bucket index to update
+     * @returns Sync result with block number and bytes downloaded, or null if already synced
+     */
+    syncBucketIndex(bucketIndex: BucketIndexWrapper): Promise<RangeSyncResult | null>;
     dispose(): void;
 }
 //# sourceMappingURL=pir-client.d.ts.map

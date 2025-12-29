@@ -10,7 +10,7 @@ mod security;
 mod transport;
 mod ubt_index;
 
-pub use bucket_index::BucketIndex;
+pub use bucket_index::{BucketIndex, RangeDeltaInfo};
 pub use client::PirClient;
 pub use error::PirError;
 pub use ubt_index::{compute_stem_js, compute_tree_key_js, get_subindex_js, StemIndex};

@@ -1,4 +1,4 @@
-import type { BalanceMetadata, BucketRange, BucketIndexInfo } from './types.js';
+import type { BalanceMetadata, BucketRange, BucketIndexInfo, RangeDeltaInfoResponse, RangeSyncResult } from './types.js';
 
 let wasmModule: typeof import('inspire-client-wasm') | null = null;
 let wasmInit: Promise<void> | null = null;
@@ -23,13 +23,21 @@ async function ensureWasmLoaded(): Promise<typeof import('inspire-client-wasm')>
  */
 export class BucketIndexWrapper {
   private index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>;
+  private _blockNumber: bigint = 0n;
 
-  constructor(index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>) {
+  constructor(index: InstanceType<typeof import('inspire-client-wasm').BucketIndex>, blockNumber?: bigint) {
     this.index = index;
+    if (blockNumber !== undefined) {
+      this._blockNumber = blockNumber;
+    }
   }
 
   get totalEntries(): bigint {
     return BigInt(this.index.total_entries);
+  }
+
+  get blockNumber(): bigint {
+    return this._blockNumber;
   }
 
   /**
@@ -49,7 +57,19 @@ export class BucketIndexWrapper {
    * @returns Block number the delta applies to
    */
   applyDelta(data: Uint8Array): bigint {
-    return BigInt(this.index.apply_delta(data));
+    const blockNum = BigInt(this.index.apply_delta(data));
+    this._blockNumber = blockNum;
+    return blockNum;
+  }
+
+  /**
+   * Apply a range delta (from /index/deltas endpoint)
+   * @returns Block number after applying the delta
+   */
+  applyRangeDelta(data: Uint8Array): bigint {
+    const blockNum = BigInt(this.index.apply_range_delta(data));
+    this._blockNumber = blockNum;
+    return blockNum;
   }
 
   dispose(): void {
@@ -141,6 +161,74 @@ export class PirBalanceClient {
     
     const index = await this.client.fetch_bucket_index();
     return new BucketIndexWrapper(index);
+  }
+
+  /**
+   * Fetch range delta info for efficient sync
+   */
+  async fetchRangeDeltaInfo(): Promise<RangeDeltaInfoResponse> {
+    const res = await fetch(`${this.serverUrl}/index/deltas/info`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch range delta info: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Sync bucket index using range-based delta
+   * 
+   * Downloads only the smallest range covering the sync gap, then applies it.
+   * Much more efficient than re-downloading the full 256KB index.
+   * 
+   * @param bucketIndex - Existing bucket index to update
+   * @returns Sync result with block number and bytes downloaded, or null if already synced
+   */
+  async syncBucketIndex(bucketIndex: BucketIndexWrapper): Promise<RangeSyncResult | null> {
+    const info = await this.fetchRangeDeltaInfo();
+    const serverBlock = BigInt(info.current_block);
+    const clientBlock = bucketIndex.blockNumber;
+    
+    if (serverBlock <= clientBlock) {
+      return null; // Already synced
+    }
+    
+    const behindBlocks = Number(serverBlock - clientBlock);
+    
+    // Find smallest range that covers our gap
+    let selectedRange = -1;
+    for (let i = 0; i < info.ranges.length; i++) {
+      if (behindBlocks <= info.ranges[i].blocks_covered) {
+        selectedRange = i;
+        break;
+      }
+    }
+    
+    if (selectedRange < 0) {
+      throw new Error(`Too far behind (${behindBlocks} blocks), need full index refresh`);
+    }
+    
+    const range = info.ranges[selectedRange];
+    
+    // Fetch just this range using HTTP Range request
+    const res = await fetch(`${this.serverUrl}/index/deltas`, {
+      headers: {
+        'Range': `bytes=${range.offset}-${range.offset + range.size - 1}`,
+      },
+    });
+    
+    if (!res.ok && res.status !== 206) {
+      throw new Error(`Failed to fetch range delta: ${res.status}`);
+    }
+    
+    const data = new Uint8Array(await res.arrayBuffer());
+    const newBlock = bucketIndex.applyRangeDelta(data);
+    
+    return {
+      blockNumber: newBlock,
+      rangeIndex: selectedRange,
+      blocksCovered: range.blocks_covered,
+      bytesDownloaded: data.length,
+    };
   }
 
   dispose(): void {
