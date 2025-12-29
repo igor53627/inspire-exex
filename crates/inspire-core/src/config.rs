@@ -46,6 +46,12 @@ pub struct TwoLaneConfig {
     /// Bucket index path (for sparse client lookups)
     #[serde(default)]
     pub bucket_index_path: Option<PathBuf>,
+    /// Stem index path (for stem-ordered databases)
+    #[serde(default)]
+    pub stem_index_path: Option<PathBuf>,
+    /// Range delta path (for efficient client sync)
+    #[serde(default)]
+    pub range_delta_path: Option<PathBuf>,
 }
 
 fn default_shard_size() -> u64 {
@@ -91,6 +97,8 @@ impl TwoLaneConfig {
             use_mmap: true,
             shard_size_bytes: default_shard_size(),
             bucket_index_path: Some(base.join("bucket-index.bin.zst")),
+            stem_index_path: Some(base.join("stem-index.bin")),
+            range_delta_path: Some(base.join("bucket-deltas.bin")),
         }
     }
 

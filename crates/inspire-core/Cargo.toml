@@ -10,3 +10,4 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }
 tiny-keccak = { workspace = true }
+blake3 = "1.5"

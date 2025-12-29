@@ -4,6 +4,7 @@ use tokio::time::interval;
 use tracing::{error, info, warn};
 
 use crate::config::UpdaterConfig;
+use crate::delta_writer::RangeDeltaWriter;
 use crate::rpc::EthrexClient;
 use crate::state::StateTracker;
 use crate::writer::ShardWriter;
@@ -52,6 +53,7 @@ pub struct UpdaterService {
     state: StateTracker,
     writer: ShardWriter,
     reload: ReloadClient,
+    delta_writer: RangeDeltaWriter,
     /// Whether we've verified UBT root since last full sync
     ubt_verified: bool,
 }
@@ -62,6 +64,11 @@ impl UpdaterService {
         let state = StateTracker::new();
         let writer = ShardWriter::new(&config.data_dir, config.chain_id);
         let reload = ReloadClient::new(&config.pir_server_url);
+        let mut delta_writer = RangeDeltaWriter::new(&config.data_dir);
+
+        if let Err(e) = delta_writer.load() {
+            warn!(error = %e, "Failed to load existing delta state");
+        }
 
         Ok(Self {
             config,
@@ -69,6 +76,7 @@ impl UpdaterService {
             state,
             writer,
             reload,
+            delta_writer,
             ubt_verified: false,
         })
     }
@@ -200,17 +208,43 @@ impl UpdaterService {
                 "Received state deltas"
             );
 
-            // Collect all deltas from all blocks
-            let mut all_entries = Vec::new();
+            // Process each block's deltas individually for accurate bucket tracking
             for block_delta in &delta_resp.blocks {
-                all_entries.extend(block_delta.deltas.clone());
+                if block_delta.deltas.is_empty() {
+                    continue;
+                }
+
+                let (changed, bucket_delta) = self.state.apply_entries_with_delta(
+                    block_delta.block_number,
+                    block_delta.deltas.clone(),
+                );
+
+                if !changed.is_empty() {
+                    info!(
+                        block = block_delta.block_number,
+                        changed = changed.len(),
+                        bucket_updates = bucket_delta.updates.len(),
+                        "Applied block delta"
+                    );
+                    self.writer.write_entries(&changed).await?;
+                }
+
+                // Add bucket delta for range tracking
+                if !bucket_delta.updates.is_empty() {
+                    self.delta_writer.add_delta(bucket_delta);
+                }
             }
 
-            if !all_entries.is_empty() {
-                let changed = self.state.apply_entries(to_block, all_entries);
-
-                info!(changed = changed.len(), "Storage entries changed");
-                self.writer.write_entries(&changed).await?;
+            // Write range delta file if we processed any blocks
+            if !delta_resp.blocks.is_empty() {
+                if let Err(e) = self.delta_writer.write() {
+                    warn!(error = %e, "Failed to write range delta file");
+                } else {
+                    info!(
+                        block = self.delta_writer.current_block(),
+                        "Wrote bucket-deltas.bin"
+                    );
+                }
 
                 // Trigger PIR server reload
                 if let Err(e) = self.reload.reload().await {
@@ -218,9 +252,6 @@ impl UpdaterService {
                 } else {
                     info!(block = to_block, "PIR server reloaded");
                 }
-            } else {
-                // No deltas but still update block number
-                self.state.apply_entries(to_block, vec![]);
             }
 
             // If we caught up to head, verify UBT

@@ -23,6 +23,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Range-based delta sync for fresh PIR queries (#69)
+  - New `range_delta` module in `inspire-core::bucket_index` with:
+    - `RangeDeltaHeader`, `RangeEntry` - file format structures
+    - `select_range(behind_blocks, ranges)` - pick optimal range to download
+    - `merge_deltas(deltas)` - cumulative delta merging
+    - `DEFAULT_RANGES: [1, 10, 100, 1000, 10000]` blocks
+  - New `RangeDeltaWriter` in `inspire-updater` for maintaining delta files
+    - Automatically trims deltas per range tier
+    - Writes single `bucket-deltas.bin` file with all ranges
+  - New server endpoints in `inspire-server`:
+    - `GET /index/deltas` - range delta file (supports HTTP Range requests)
+    - `GET /index/deltas/info` - metadata about available ranges
+  - New `range_sync` module in `inspire-client::bucket_index`:
+    - `parse_info(data)` - parse range delta header
+    - `RangeDeltaInfo.get_fetch_range(client_block)` - compute byte range to fetch
+  - New `range_delta_path` in `TwoLaneConfig`
+  - Benefits: Fresh data per query with minimal bandwidth (4-400 KB vs 256 KB full index)
+
+- EIP-7864 state restructuring for efficient stem indexing (#67)
+  - Refactored `inspire-core::ubt` to use tree_index semantics per EIP-7864
+  - New tree_index computation functions:
+    - `compute_storage_tree_index(slot)` - slots 0-63 map to subindex 64-127, slots >= 64 use overflow stems
+    - `compute_basic_data_tree_index()` - subindex 0 for account header
+    - `compute_code_hash_tree_index()` - subindex 1 for code hash
+    - `compute_code_chunk_tree_index(chunk_id)` - chunks 0-127 map to subindex 128-255
+  - Helper functions: `pack_basic_data()`, `pack_code_chunk()`, `code_chunk_count()`
+  - Updated `inspire-client-wasm::ubt_index` with new WASM bindings:
+    - `computeStorageTreeIndex(slot)`, `computeBasicDataTreeIndex()`, etc.
+    - `StemIndex.lookupStorage()`, `lookupBasicData()`, `lookupCodeHash()`, `lookupCodeChunk()`
+  - Added `--ordering eip7864` mode to ethrex-pir-export for full tree embedding
+  - Updated STATE_FORMAT.md with EIP-7864 tree_index specification
+  - Expected stem reduction: ~30K-60K unique stems vs 5.6M (100x improvement)
+
+- UBT stem-based indexing for WASM clients (#66)
+  - Added `inspire-core::ubt` module with EIP-7864 stem computation using BLAKE3
+  - Added `inspire-client-wasm::ubt_index` with WASM-bindgen exports:
+    - `computeStem(address, treeIndex)` - compute 31-byte stem
+    - `computeTreeKey(address, treeIndex)` - compute full 32-byte tree key  
+    - `getSubindex(treeIndex)` - extract subindex from tree_index
+    - `StemIndex` - lookup table for O(log N) index computation
+  - Eliminates 512 KB bucket index download for stem-ordered databases
+  - Updated README with correct BLAKE3 formula (was incorrectly showing Pedersen hash)
+
 - New `inspire-updater` crate for syncing PIR database from ethrex node (#62)
   - `EthrexClient` with `pir_dumpStorage`, `pir_getStateDelta`, and `ubt_getRoot` support
   - `StateTracker` for tracking storage state changes

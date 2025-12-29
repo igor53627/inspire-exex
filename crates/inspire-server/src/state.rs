@@ -158,6 +158,100 @@ impl CachedBucketIndex {
     }
 }
 
+/// Cached stem index with entry count
+///
+/// Format: count:4 + (stem:31 + offset:8)* - same as StemIndex in inspire-client-wasm
+pub struct CachedStemIndex {
+    /// Raw binary data (count:4 + (stem:31 + offset:8)*)
+    pub data: Vec<u8>,
+    /// Number of stems in the index
+    pub stem_count: u32,
+    /// Total entries in the database
+    pub total_entries: u64,
+}
+
+impl CachedStemIndex {
+    /// Parse stem index from raw bytes
+    pub fn from_bytes(data: Vec<u8>) -> Option<Self> {
+        if data.len() < 4 {
+            return None;
+        }
+        let stem_count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        // Each entry is 31 bytes (stem) + 8 bytes (offset) = 39 bytes
+        let expected_len = 4 + (stem_count as usize) * 39;
+        if data.len() != expected_len {
+            return None;
+        }
+        // Total entries is in the last offset value (at the end of the last entry)
+        let total_entries = if stem_count > 0 {
+            let last_offset_start = data.len() - 8;
+            u64::from_le_bytes(data[last_offset_start..].try_into().ok()?)
+        } else {
+            0
+        };
+        Some(Self {
+            data,
+            stem_count,
+            total_entries,
+        })
+    }
+}
+
+/// Range delta info for a single range
+#[derive(Clone)]
+pub struct CachedRangeInfo {
+    pub blocks_covered: u32,
+    pub offset: u32,
+    pub size: u32,
+}
+
+/// Cached range delta file for efficient client sync
+pub struct CachedRangeDelta {
+    /// Full file data (supports HTTP Range requests)
+    pub data: Vec<u8>,
+    /// Current block number
+    pub current_block: u64,
+    /// Range directory
+    pub ranges: Vec<CachedRangeInfo>,
+}
+
+impl CachedRangeDelta {
+    /// Load from file
+    pub fn from_file(path: &std::path::Path) -> Option<Self> {
+        use inspire_core::bucket_index::range_delta::{
+            RangeDeltaHeader, RangeEntry, HEADER_SIZE, RANGE_ENTRY_SIZE,
+        };
+
+        let data = std::fs::read(path).ok()?;
+        if data.len() < HEADER_SIZE {
+            return None;
+        }
+
+        let header = RangeDeltaHeader::from_bytes(&data)?;
+
+        let mut ranges = Vec::new();
+        let mut offset = HEADER_SIZE;
+        for _ in 0..header.num_ranges {
+            if offset + RANGE_ENTRY_SIZE > data.len() {
+                break;
+            }
+            let entry = RangeEntry::from_bytes(&data[offset..])?;
+            ranges.push(CachedRangeInfo {
+                blocks_covered: entry.blocks_covered,
+                offset: entry.offset,
+                size: entry.size,
+            });
+            offset += RANGE_ENTRY_SIZE;
+        }
+
+        Some(Self {
+            data,
+            current_block: header.current_block,
+            ranges,
+        })
+    }
+}
+
 /// Immutable snapshot of server state
 ///
 /// All queries operate on a cloned Arc of this snapshot, ensuring consistency
@@ -171,6 +265,10 @@ pub struct DbSnapshot {
     pub router: Option<LaneRouter>,
     /// Bucket index for sparse client lookups (with precompressed cache)
     pub bucket_index: Option<CachedBucketIndex>,
+    /// Stem index for stem-ordered databases
+    pub stem_index: Option<CachedStemIndex>,
+    /// Range delta file for efficient client sync
+    pub range_delta: Option<CachedRangeDelta>,
     /// Block number this snapshot reflects
     pub block_number: Option<u64>,
     /// PIR params version (from CRS metadata)
@@ -256,6 +354,8 @@ impl ServerState {
             cold_lane: None,
             router: None,
             bucket_index: None,
+            stem_index: None,
+            range_delta: None,
             block_number: None,
             pir_params_version: PIR_PARAMS_VERSION,
         });
@@ -286,6 +386,8 @@ impl ServerState {
         let cold_lane = self.try_load_cold_lane();
         let router = self.try_load_router();
         let bucket_index = self.try_load_bucket_index();
+        let stem_index = self.try_load_stem_index();
+        let range_delta = self.try_load_range_delta();
 
         if hot_lane.is_none() && cold_lane.is_none() {
             return Err(ServerError::Internal(
@@ -300,6 +402,8 @@ impl ServerState {
             cold_lane,
             router,
             bucket_index,
+            stem_index,
+            range_delta,
             block_number,
             pir_params_version: PIR_PARAMS_VERSION,
         });
@@ -523,6 +627,64 @@ impl ServerState {
             }
             Err(e) => {
                 tracing::warn!("Failed to read bucket index: {}", e);
+                None
+            }
+        }
+    }
+
+    fn try_load_stem_index(&self) -> Option<CachedStemIndex> {
+        let index_path = self.config.stem_index_path.as_ref()?;
+
+        if !index_path.exists() {
+            tracing::debug!("Stem index not found: {}", index_path.display());
+            return None;
+        }
+
+        match std::fs::read(index_path) {
+            Ok(data) => match CachedStemIndex::from_bytes(data) {
+                Some(cached) => {
+                    tracing::info!(
+                        path = %index_path.display(),
+                        stem_count = cached.stem_count,
+                        total_entries = cached.total_entries,
+                        size_bytes = cached.data.len(),
+                        "Stem index loaded"
+                    );
+                    Some(cached)
+                }
+                None => {
+                    tracing::warn!("Failed to parse stem index: invalid format");
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to read stem index: {}", e);
+                None
+            }
+        }
+    }
+
+    fn try_load_range_delta(&self) -> Option<CachedRangeDelta> {
+        let delta_path = self.config.range_delta_path.as_ref()?;
+
+        if !delta_path.exists() {
+            tracing::debug!("Range delta file not found: {}", delta_path.display());
+            return None;
+        }
+
+        match CachedRangeDelta::from_file(&delta_path) {
+            Some(cached) => {
+                tracing::info!(
+                    path = %delta_path.display(),
+                    current_block = cached.current_block,
+                    ranges = cached.ranges.len(),
+                    size_bytes = cached.data.len(),
+                    "Range delta file loaded"
+                );
+                Some(cached)
+            }
+            None => {
+                tracing::warn!("Failed to parse range delta file: invalid format");
                 None
             }
         }

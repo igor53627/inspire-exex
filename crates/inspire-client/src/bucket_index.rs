@@ -136,6 +136,59 @@ impl BucketIndex {
     }
 }
 
+/// Client-side range delta sync helper
+pub mod range_sync {
+    pub use inspire_core::bucket_index::range_delta::{
+        select_range, RangeDeltaHeader, RangeEntry, DEFAULT_RANGES, HEADER_SIZE, RANGE_ENTRY_SIZE,
+    };
+
+    /// Parse range delta info from file header
+    pub fn parse_info(data: &[u8]) -> Option<RangeDeltaInfo> {
+        if data.len() < HEADER_SIZE {
+            return None;
+        }
+
+        let header = RangeDeltaHeader::from_bytes(data)?;
+
+        let mut ranges = Vec::new();
+        let mut offset = HEADER_SIZE;
+        for _ in 0..header.num_ranges {
+            if offset + RANGE_ENTRY_SIZE > data.len() {
+                break;
+            }
+            let entry = RangeEntry::from_bytes(&data[offset..])?;
+            ranges.push(entry);
+            offset += RANGE_ENTRY_SIZE;
+        }
+
+        Some(RangeDeltaInfo {
+            current_block: header.current_block,
+            ranges,
+        })
+    }
+
+    /// Info about available delta ranges
+    pub struct RangeDeltaInfo {
+        pub current_block: u64,
+        pub ranges: Vec<RangeEntry>,
+    }
+
+    impl RangeDeltaInfo {
+        /// Get the byte range to fetch for syncing from client_block to current
+        pub fn get_fetch_range(&self, client_block: u64) -> Option<(u32, u32)> {
+            if client_block >= self.current_block {
+                return None; // already synced
+            }
+
+            let behind = self.current_block - client_block;
+            let range_blocks: Vec<u32> = self.ranges.iter().map(|r| r.blocks_covered).collect();
+            let idx = select_range(behind, &range_blocks)?;
+            let range = &self.ranges[idx];
+            Some((range.offset, range.size))
+        }
+    }
+}
+
 /// Errors for bucket index operations
 #[derive(Debug, thiserror::Error)]
 pub enum BucketIndexError {

@@ -49,6 +49,7 @@ mod manifest;
 mod params;
 mod routing;
 pub mod state_format;
+pub mod ubt;
 
 pub use balance::{BalanceDbMetadata, BalanceRecord, BALANCE_RECORD_SIZE};
 pub use config::{TwoLaneConfig, PROTOCOL_VERSION};

@@ -20,12 +20,14 @@
 //! ```
 
 mod config;
+mod delta_writer;
 mod rpc;
 mod service;
 mod state;
 mod writer;
 
 pub use config::UpdaterConfig;
+pub use delta_writer::RangeDeltaWriter;
 pub use rpc::{
     BlockDeltas, DumpStorageResponse, EthrexClient, StateDeltaResponse, StorageEntry,
     UbtRootResponse,

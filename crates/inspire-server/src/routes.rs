@@ -320,6 +320,117 @@ pub struct BucketIndexInfo {
     pub compressed_size: usize,
 }
 
+/// Stem index metadata
+#[derive(Serialize)]
+pub struct StemIndexInfo {
+    pub stem_count: u32,
+    pub total_entries: u64,
+    pub block_number: Option<u64>,
+}
+
+/// Range delta info (for client sync)
+#[derive(Serialize)]
+pub struct RangeDeltaInfo {
+    pub current_block: u64,
+    pub ranges: Vec<RangeInfo>,
+}
+
+/// Info about a single delta range
+#[derive(Serialize)]
+pub struct RangeInfo {
+    pub blocks_covered: u32,
+    pub offset: u32,
+    pub size: u32,
+}
+
+/// Get stem index (binary)
+///
+/// Returns the stem index for stem-ordered databases.
+/// Format: count:4 + (stem:31 + offset:8)*
+async fn get_stem_index(State(state): State<SharedState>) -> Result<Response> {
+    let snapshot = state.load_snapshot();
+
+    let cached = snapshot
+        .stem_index
+        .as_ref()
+        .ok_or_else(|| ServerError::StemIndexNotLoaded)?;
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CACHE_CONTROL, "public, max-age=60"),
+        ],
+        cached.data.clone(),
+    )
+        .into_response())
+}
+
+/// Get stem index info (metadata only)
+async fn get_stem_index_info(State(state): State<SharedState>) -> Result<Json<StemIndexInfo>> {
+    let snapshot = state.load_snapshot();
+
+    let cached = snapshot
+        .stem_index
+        .as_ref()
+        .ok_or_else(|| ServerError::StemIndexNotLoaded)?;
+
+    Ok(Json(StemIndexInfo {
+        stem_count: cached.stem_count,
+        total_entries: cached.total_entries,
+        block_number: snapshot.block_number,
+    }))
+}
+
+/// Get range delta file info
+///
+/// Returns metadata about available delta ranges for efficient client sync.
+/// Client reads this, picks appropriate range, then fetches via HTTP Range request.
+async fn get_range_delta_info(State(state): State<SharedState>) -> Result<Json<RangeDeltaInfo>> {
+    let snapshot = state.load_snapshot();
+
+    let cached = snapshot
+        .range_delta
+        .as_ref()
+        .ok_or_else(|| ServerError::Internal("Range delta not loaded".to_string()))?;
+
+    Ok(Json(RangeDeltaInfo {
+        current_block: cached.current_block,
+        ranges: cached
+            .ranges
+            .iter()
+            .map(|r| RangeInfo {
+                blocks_covered: r.blocks_covered,
+                offset: r.offset,
+                size: r.size,
+            })
+            .collect(),
+    }))
+}
+
+/// Get range delta file (supports HTTP Range requests)
+///
+/// Full file or partial range for efficient sync:
+/// - `GET /index/deltas` - full file (~3 MB)
+/// - `GET /index/deltas` with `Range: bytes=1024-2048` - specific range
+async fn get_range_delta(State(state): State<SharedState>) -> Result<Response> {
+    let snapshot = state.load_snapshot();
+
+    let cached = snapshot
+        .range_delta
+        .as_ref()
+        .ok_or_else(|| ServerError::Internal("Range delta not loaded".to_string()))?;
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CACHE_CONTROL, "public, max-age=12"),
+            (header::ACCEPT_RANGES, "bytes"),
+        ],
+        cached.data.clone(),
+    )
+        .into_response())
+}
+
 /// Subscribe to bucket index delta updates via WebSocket
 ///
 /// Protocol:
@@ -375,6 +486,10 @@ pub fn create_public_router_with_metrics(
         .route("/index/raw", get(get_bucket_index_raw))
         .route("/index/info", get(get_bucket_index_info))
         .route("/index/subscribe", get(subscribe_index))
+        .route("/index/stems", get(get_stem_index))
+        .route("/index/stems/info", get(get_stem_index_info))
+        .route("/index/deltas", get(get_range_delta))
+        .route("/index/deltas/info", get(get_range_delta_info))
         .with_state(state);
 
     if let Some(handle) = prometheus_handle {
@@ -421,6 +536,10 @@ pub fn create_router_with_metrics(
         .route("/index/raw", get(get_bucket_index_raw))
         .route("/index/info", get(get_bucket_index_info))
         .route("/index/subscribe", get(subscribe_index))
+        .route("/index/stems", get(get_stem_index))
+        .route("/index/stems/info", get(get_stem_index_info))
+        .route("/index/deltas", get(get_range_delta))
+        .route("/index/deltas/info", get(get_range_delta_info))
         .route("/admin/reload", post(admin_reload))
         .with_state(state);
 

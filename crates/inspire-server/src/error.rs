@@ -21,6 +21,9 @@ pub enum ServerError {
     #[error("Bucket index not loaded")]
     BucketIndexNotLoaded,
 
+    #[error("Stem index not loaded")]
+    StemIndexNotLoaded,
+
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
 
@@ -64,6 +67,7 @@ impl ServerError {
         match self {
             ServerError::LaneNotLoaded(_) => "LANE_NOT_LOADED",
             ServerError::BucketIndexNotLoaded => "BUCKET_INDEX_NOT_LOADED",
+            ServerError::StemIndexNotLoaded => "STEM_INDEX_NOT_LOADED",
             ServerError::InvalidQuery(_) => "INVALID_QUERY",
             ServerError::PirError(_) => "PIR_ERROR",
             ServerError::ConfigMismatch { .. } => "CONFIG_MISMATCH",
@@ -80,6 +84,7 @@ impl ServerError {
         match self {
             ServerError::LaneNotLoaded(_) => StatusCode::SERVICE_UNAVAILABLE,
             ServerError::BucketIndexNotLoaded => StatusCode::SERVICE_UNAVAILABLE,
+            ServerError::StemIndexNotLoaded => StatusCode::NOT_FOUND,
             ServerError::InvalidQuery(_) => StatusCode::BAD_REQUEST,
             ServerError::PirError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::ConfigMismatch { .. } => StatusCode::INTERNAL_SERVER_ERROR,

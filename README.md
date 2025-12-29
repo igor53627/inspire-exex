@@ -139,17 +139,30 @@ inspire-server db.bin --port 3000
 inspire-client http://localhost:3000 --stem 0x... --subindex 0
 ```
 
-### Index Computation (UBT)
+### Index Computation (EIP-7864)
 
-With UBT, clients compute the PIR index directly using EIP-7864 stem derivation:
+With EIP-7864 tree embedding, clients compute PIR indices directly:
 
 ```
-stem = pedersen_hash(address || slot[:31])  # 31 bytes
-subindex = slot[31]                          # 1 byte (0-255)
+# Step 1: Compute tree_index from leaf type
+# For storage slot:
+if slot < 64:
+    tree_index = [0; 31] || (64 + slot)  # account stem, subindex 64-127
+else:
+    tree_index = MAIN_STORAGE_OFFSET + slot  # overflow stem
+
+# Step 2: Compute stem and tree_key
+stem = blake3(address32 || tree_index[:31])[:31]
+subindex = tree_index[31]
+tree_key = stem || subindex
+
+# Step 3: Look up PIR index
 index = stem_to_db_offset(stem) + subindex
 ```
 
-No manifest download required - the stem algorithm is deterministic.
+EIP-7864 co-locates account data (headers, code chunks, first 64 storage slots) in a single "account stem" per address, reducing unique stems from ~5.6M to ~30K-60K.
+
+See [EIP-7864](https://eips.ethereum.org/EIPS/eip-7864) and [STATE_FORMAT.md](docs/STATE_FORMAT.md) for details.
 
 ## Protocol Variants
 
