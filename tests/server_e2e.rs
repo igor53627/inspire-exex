@@ -929,6 +929,9 @@ pub struct RangeDeltaTestHarness {
     pub server_url: String,
     pub temp_dir: PathBuf,
     pub http: Client,
+    /// Keep the base harness alive to prevent temp_dir cleanup
+    #[allow(dead_code)]
+    base: TestHarness,
 }
 
 impl RangeDeltaTestHarness {
@@ -1028,6 +1031,7 @@ impl RangeDeltaTestHarness {
             server_url,
             temp_dir: base.temp_dir.clone(),
             http,
+            base,
         }
     }
 }
