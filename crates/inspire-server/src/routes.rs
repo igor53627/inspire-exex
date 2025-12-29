@@ -2,13 +2,13 @@
 
 use axum::{
     extract::{ws::WebSocketUpgrade, Path, State},
-    http::{header, Method},
+    http::header,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 use crate::broadcast::handle_index_subscription;
 
@@ -492,12 +492,7 @@ pub fn create_public_router_with_metrics(
         .route("/index/deltas", get(get_range_delta))
         .route("/index/deltas/info", get(get_range_delta_info))
         .with_state(state)
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-                .allow_headers(Any),
-        );
+        .layer(CorsLayer::permissive());
 
     if let Some(handle) = prometheus_handle {
         router = router.route(
