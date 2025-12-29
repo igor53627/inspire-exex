@@ -235,9 +235,14 @@ impl TwoLaneSetup {
             );
         }
 
-        let config = TwoLaneConfig::from_base_dir(&self.output_dir)
+        let mut config = TwoLaneConfig::from_base_dir(&self.output_dir)
             .with_entries(hot_entries, cold_entries)
             .with_hash();
+
+        // Override paths to match actual files (JSON, not bin)
+        config.hot_lane_db = hot_dir.join("encoded.json");
+        config.cold_lane_db = cold_dir.join("encoded.json");
+        config.use_mmap = false; // JSON mode doesn't use mmap
 
         config.save(&self.output_dir.join("config.json"))?;
 
