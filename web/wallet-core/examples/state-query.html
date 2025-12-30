@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EIP-7864 State Query Demo</title>
+    <style>
+        :root {
+            --bg: #0f0f1a;
+            --card: #1a1a2e;
+            --accent: #7f5af0;
+            --text: #e0e0e0;
+            --success: #2ecc71;
+            --error: #e74c3c;
+            --warn: #f39c12;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+        }
+        h1 { color: var(--accent); margin-bottom: 5px; }
+        .subtitle { color: #888; margin-bottom: 30px; }
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        .card h3 { margin-top: 0; color: var(--accent); }
+        label { display: block; margin: 10px 0 5px; font-size: 14px; }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #333;
+            background: #0a0a12;
+            color: var(--text);
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 12px 24px;
+            border-radius: 6px;
+            border: none;
+            background: var(--accent);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        button:hover { background: #6b4ed8; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status.success { background: var(--success); color: #000; }
+        .status.error { background: var(--error); }
+        .status.pending { background: var(--warn); color: #000; }
+        .status.idle { background: #444; }
+        #log {
+            background: #0a0a0a;
+            border-radius: 6px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .log-info { color: #3498db; }
+        .log-success { color: var(--success); }
+        .log-error { color: var(--error); }
+        .balance-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #333;
+        }
+        .balance-value { font-family: monospace; font-size: 18px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-box {
+            background: #0a0a12;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value { font-size: 24px; font-weight: bold; color: var(--accent); }
+        .stat-label { font-size: 12px; color: #888; margin-top: 5px; }
+        .highlight { 
+            background: linear-gradient(90deg, #7f5af0 0%, #2ecc71 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>EIP-7864 State Query Demo</h1>
+    <p class="subtitle">Private Ethereum storage slot queries - <span class="highlight">1 PIR request per storage slot</span></p>
+
+    <div class="card">
+        <h3>How It Works</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; margin: 15px 0;">
+            <div style="background: #0a0a12; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">1</div>
+                <div style="font-size: 12px;">Compute tree_key<br><code>blake3(address || stem_pos)</code></div>
+            </div>
+            <div style="background: #0a0a12; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">2</div>
+                <div style="font-size: 12px;">Stem index lookup<br><code>O(log N) binary search</code></div>
+            </div>
+            <div style="background: #0a0a12; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; margin-bottom: 5px;">3</div>
+                <div style="font-size: 12px;">PIR query<br><code>~50 KB request</code></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Configuration</h3>
+        <label>PIR Server URL</label>
+        <input type="text" id="pirServer" value="http://localhost:3001">
+        <button id="initBtn" onclick="initialize()">Initialize StateClient</button>
+        <span id="initStatus" class="status idle" style="margin-left: 10px;">Not initialized</span>
+        
+        <div id="statsSection" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-value" id="stemCount">--</div>
+                    <div class="stat-label">Unique Stems</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="stemIndexSize">--</div>
+                    <div class="stat-label">Stem Index Size</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="crsSize">--</div>
+                    <div class="stat-label">CRS Size</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Query USDC Balance (Sepolia)</h3>
+        <p style="font-size: 12px; color: #888;">
+            USDC Contract: <code>0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238</code><br>
+            Balances mapping slot: <code>9</code>
+        </p>
+        <label>Wallet Address</label>
+        <input type="text" id="walletAddress" placeholder="0x..." value="0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045">
+        <button id="queryBtn" onclick="queryUsdcBalance()" disabled>Query USDC Balance</button>
+        
+        <div id="resultSection" style="display: none; margin-top: 20px;">
+            <div class="balance-row">
+                <span>USDC Balance</span>
+                <span class="balance-value" id="usdcBalance">--</span>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #888;">
+                Storage slot: <code id="storageSlot">--</code><br>
+                PIR index: <code id="pirIndex">--</code><br>
+                Query time: <span id="queryTime">--</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Custom Storage Slot Query</h3>
+        <label>Contract Address</label>
+        <input type="text" id="contractAddress" placeholder="0x...">
+        <label>Storage Slot (hex)</label>
+        <input type="text" id="storageSlotInput" placeholder="0x0000...">
+        <button id="customQueryBtn" onclick="queryCustomSlot()" disabled>Query Slot</button>
+        
+        <div id="customResultSection" style="display: none; margin-top: 20px;">
+            <div class="balance-row">
+                <span>Value</span>
+                <span class="balance-value" id="slotValue" style="font-size: 14px; word-break: break-all;">--</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Client Log</h3>
+        <div id="log"></div>
+    </div>
+
+    <script type="module">
+        // Import will be replaced with actual build path
+        // For development, we'll use dynamic import
+        
+        let stateClient = null;
+        let wasm = null;
+
+        function log(msg, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+            logDiv.innerHTML += `<span class="log-${type}">[${ts}] ${msg}</span>\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        window.initialize = async function() {
+            const serverUrl = document.getElementById('pirServer').value;
+            const statusEl = document.getElementById('initStatus');
+            
+            statusEl.textContent = 'Initializing...';
+            statusEl.className = 'status pending';
+            log('Loading WASM module...');
+
+            try {
+                // Import WASM module
+                wasm = await import('inspire-client-wasm');
+                await wasm.default();
+                log('WASM loaded', 'success');
+
+                // Create StateClient
+                log(`Connecting to ${serverUrl}...`);
+                
+                // For now, we'll use the low-level WASM APIs directly
+                // until wallet-core is rebuilt with StateClient
+                
+                // Fetch stem index
+                log('Downloading stem index...');
+                const stemRes = await fetch(`${serverUrl}/index/stems`);
+                if (!stemRes.ok) {
+                    throw new Error(`Failed to fetch stem index: ${stemRes.status}`);
+                }
+                const stemData = new Uint8Array(await stemRes.arrayBuffer());
+                const stemIndex = wasm.StemIndex.from_bytes(stemData);
+                
+                const stemCount = stemIndex.count;
+                const stemIndexSize = (stemData.length / 1024).toFixed(1);
+                
+                log(`Stem index loaded: ${stemCount.toLocaleString()} stems (${stemIndexSize} KB)`, 'success');
+                
+                // Initialize PIR client
+                log('Downloading CRS (Common Reference String)...');
+                const pirClient = new wasm.PirClient(serverUrl);
+                await pirClient.init('state');
+                log('PIR client initialized', 'success');
+                
+                // Store for later use
+                window.stemIndex = stemIndex;
+                window.pirClient = pirClient;
+                window.serverUrl = serverUrl;
+                
+                // Update UI
+                document.getElementById('stemCount').textContent = stemCount.toLocaleString();
+                document.getElementById('stemIndexSize').textContent = `${stemIndexSize} KB`;
+                document.getElementById('crsSize').textContent = '~80 KB'; // Approximate
+                document.getElementById('statsSection').style.display = 'block';
+                
+                statusEl.textContent = 'Ready';
+                statusEl.className = 'status success';
+                document.getElementById('queryBtn').disabled = false;
+                document.getElementById('customQueryBtn').disabled = false;
+                
+                log('StateClient ready!', 'success');
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+                statusEl.textContent = 'Error';
+                statusEl.className = 'status error';
+            }
+        };
+
+        window.queryUsdcBalance = async function() {
+            const walletAddress = document.getElementById('walletAddress').value;
+            if (!walletAddress) {
+                log('Please enter a wallet address', 'error');
+                return;
+            }
+
+            const startTime = performance.now();
+            log(`Querying USDC balance for ${walletAddress.slice(0, 10)}...`);
+
+            try {
+                // Get USDC info
+                const usdc = wasm.sepolia_usdc();
+                const usdcAddress = hexToBytes(usdc.address_hex);
+                const walletBytes = hexToBytes(walletAddress);
+                
+                // Compute storage slot for balances[wallet]
+                const storageSlot = wasm.compute_balance_slot(walletBytes, usdc.balance_slot);
+                const slotHex = bytesToHex(storageSlot);
+                log(`Storage slot: 0x${slotHex.slice(0, 16)}...`);
+                
+                // Look up PIR index
+                const pirIndex = window.stemIndex.lookup_storage(usdcAddress, storageSlot);
+                if (pirIndex < 0) {
+                    log('Slot not found in database (balance may be 0)', 'error');
+                    document.getElementById('usdcBalance').textContent = '0 USDC';
+                    document.getElementById('resultSection').style.display = 'block';
+                    return;
+                }
+                log(`PIR index: ${pirIndex}`);
+                
+                // Execute PIR query
+                log('Executing PIR query...');
+                const result = await window.pirClient.query_binary(BigInt(pirIndex));
+                
+                // Extract value (last 32 bytes if 84-byte entry, or full if 32-byte)
+                let valueBytes;
+                if (result.length >= 84) {
+                    valueBytes = result.slice(52, 84);
+                } else if (result.length === 32) {
+                    valueBytes = result;
+                } else {
+                    throw new Error(`Unexpected result size: ${result.length}`);
+                }
+                
+                const balance = bytesToBigInt(valueBytes);
+                const balanceFormatted = formatUsdc(balance);
+                
+                const elapsed = (performance.now() - startTime).toFixed(0);
+                
+                // Update UI
+                document.getElementById('usdcBalance').textContent = `${balanceFormatted} USDC`;
+                document.getElementById('storageSlot').textContent = `0x${slotHex.slice(0, 16)}...`;
+                document.getElementById('pirIndex').textContent = pirIndex.toString();
+                document.getElementById('queryTime').textContent = `${elapsed}ms`;
+                document.getElementById('resultSection').style.display = 'block';
+                
+                log(`Balance: ${balanceFormatted} USDC (${elapsed}ms)`, 'success');
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        window.queryCustomSlot = async function() {
+            const contractAddress = document.getElementById('contractAddress').value;
+            const slotInput = document.getElementById('storageSlotInput').value;
+            
+            if (!contractAddress || !slotInput) {
+                log('Please enter contract address and storage slot', 'error');
+                return;
+            }
+
+            log(`Querying slot ${slotInput.slice(0, 18)}...`);
+
+            try {
+                const contractBytes = hexToBytes(contractAddress);
+                const slotBytes = hexToBytes(slotInput.padEnd(66, '0').slice(0, 66)); // Pad to 32 bytes
+                
+                // Look up PIR index
+                const pirIndex = window.stemIndex.lookup_storage(contractBytes, slotBytes);
+                if (pirIndex < 0) {
+                    log('Slot not found in database', 'error');
+                    document.getElementById('slotValue').textContent = 'Not found';
+                    document.getElementById('customResultSection').style.display = 'block';
+                    return;
+                }
+                
+                // Execute PIR query
+                const result = await window.pirClient.query_binary(BigInt(pirIndex));
+                
+                // Extract value
+                let valueBytes;
+                if (result.length >= 84) {
+                    valueBytes = result.slice(52, 84);
+                } else {
+                    valueBytes = result;
+                }
+                
+                const valueHex = '0x' + bytesToHex(valueBytes);
+                
+                document.getElementById('slotValue').textContent = valueHex;
+                document.getElementById('customResultSection').style.display = 'block';
+                
+                log(`Value: ${valueHex.slice(0, 18)}...`, 'success');
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // Helper functions
+        function hexToBytes(hex) {
+            const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+            const bytes = new Uint8Array(cleanHex.length / 2);
+            for (let i = 0; i < bytes.length; i++) {
+                bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
+            }
+            return bytes;
+        }
+
+        function bytesToHex(bytes) {
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function bytesToBigInt(bytes) {
+            let result = 0n;
+            for (const byte of bytes) {
+                result = (result << 8n) | BigInt(byte);
+            }
+            return result;
+        }
+
+        function formatUsdc(balance) {
+            const divisor = 1000000n;
+            const whole = balance / divisor;
+            const fraction = (balance % divisor).toString().padStart(6, '0');
+            return `${whole.toLocaleString()}.${fraction.slice(0, 2)}`;
+        }
+    </script>
+</body>
+</html>

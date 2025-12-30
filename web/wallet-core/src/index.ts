@@ -1,5 +1,6 @@
 export { WalletCore, formatEth, formatUsdc } from './wallet-core.js';
 export { PirBalanceClient, BucketIndexWrapper } from './pir-client.js';
+export { StateClient, StemIndexWrapper, formatTokenBalance, formatUsdc as formatUsdcState } from './state-client.js';
 export { HeliosVerifier } from './helios-verifier.js';
 export type {
   WalletCoreConfig,
