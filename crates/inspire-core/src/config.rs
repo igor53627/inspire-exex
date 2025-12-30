@@ -52,6 +52,9 @@ pub struct TwoLaneConfig {
     /// Range delta path (for efficient client sync)
     #[serde(default)]
     pub range_delta_path: Option<PathBuf>,
+    /// Source state.bin file path (for entry metadata lookups)
+    #[serde(default)]
+    pub state_file_path: Option<PathBuf>,
 }
 
 fn default_shard_size() -> u64 {
@@ -99,6 +102,7 @@ impl TwoLaneConfig {
             bucket_index_path: Some(base.join("bucket-index.bin.zst")),
             stem_index_path: Some(base.join("stem-index.bin")),
             range_delta_path: Some(base.join("bucket-deltas.bin")),
+            state_file_path: Some(base.join("state.bin")),
         }
     }
 
@@ -106,6 +110,12 @@ impl TwoLaneConfig {
     pub fn with_entries(mut self, hot: u64, cold: u64) -> Self {
         self.hot_entries = hot;
         self.cold_entries = cold;
+        self
+    }
+
+    /// Set the entry size
+    pub fn with_entry_size(mut self, size: usize) -> Self {
+        self.entry_size = size;
         self
     }
 

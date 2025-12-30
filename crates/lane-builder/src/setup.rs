@@ -237,6 +237,7 @@ impl TwoLaneSetup {
 
         let mut config = TwoLaneConfig::from_base_dir(&self.output_dir)
             .with_entries(hot_entries, cold_entries)
+            .with_entry_size(self.entry_size)
             .with_hash();
 
         // Override paths to match actual files (JSON, not bin)
