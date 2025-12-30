@@ -158,10 +158,15 @@
         <h3>Query USDC Balance (Sepolia)</h3>
         <p style="font-size: 12px; color: #888;">
             USDC Contract: <code>0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238</code><br>
-            Balances mapping slot: <code>9</code>
+            Balances mapping slot: <code>9</code><br>
+            <span style="color: #7f5af0;">Try (5 wallets in database):</span><br>
+            <a href="#" onclick="document.getElementById('walletAddress').value='0xf08A50178dfcDe18524640EA6618a1f965821715';return false" style="color:#2ecc71">471.80 USDC</a> |
+            <a href="#" onclick="document.getElementById('walletAddress').value='0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';return false" style="color:#2ecc71">vitalik (210 USDC)</a> |
+            <a href="#" onclick="document.getElementById('walletAddress').value='0x0000000000000000000000000000000000000001';return false" style="color:#2ecc71">0x..01 (123 USDC)</a> |
+            <a href="#" onclick="document.getElementById('walletAddress').value='0x5B38Da6a701c568545dCfcB03FcB875f56beddC4';return false" style="color:#2ecc71">Remix (1 USDC)</a>
         </p>
         <label>Wallet Address</label>
-        <input type="text" id="walletAddress" placeholder="0x..." value="0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045">
+        <input type="text" id="walletAddress" placeholder="0x..." value="0x5B38Da6a701c568545dCfcB03FcB875f56beddC4">
         <button id="queryBtn" onclick="queryUsdcBalance()" disabled>Query USDC Balance</button>
         
         <div id="resultSection" style="display: none; margin-top: 20px;">
@@ -177,6 +182,35 @@
         </div>
     </div>
 
+    <div class="card">
+        <h3>Debug: Query by PIR Index</h3>
+        <p style="font-size: 12px; color: #888;">
+            Directly query a PIR database entry by index (0-4).<br>
+            <span style="color: #7f5af0;">Try:</span> 
+            <a href="#" onclick="document.getElementById('pirIndexInput').value='0';return false" style="color:#2ecc71">0: 471 USDC</a> |
+            <a href="#" onclick="document.getElementById('pirIndexInput').value='1';return false" style="color:#2ecc71">1: 1 USDC</a> |
+            <a href="#" onclick="document.getElementById('pirIndexInput').value='3';return false" style="color:#2ecc71">3: vitalik 210 USDC</a> |
+            <a href="#" onclick="document.getElementById('pirIndexInput').value='4';return false" style="color:#2ecc71">4: 123 USDC</a>
+        </p>
+        <label>PIR Index</label>
+        <input type="number" id="pirIndexInput" placeholder="0" value="0" min="0" max="4">
+        <button id="indexQueryBtn" onclick="queryByIndex()" disabled>Query by Index</button>
+        
+        <div id="indexResultSection" style="display: none; margin-top: 20px;">
+            <div class="balance-row">
+                <span>Raw Value (hex)</span>
+                <span class="balance-value" id="rawValue" style="font-size: 12px; word-break: break-all;">--</span>
+            </div>
+            <div class="balance-row">
+                <span>As USDC</span>
+                <span class="balance-value" id="indexUsdcValue">--</span>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #888;">
+                Query time: <span id="indexQueryTime">--</span>
+            </div>
+        </div>
+    </div>
+    
     <div class="card">
         <h3>Custom Storage Slot Query</h3>
         <label>Contract Address</label>
@@ -221,8 +255,8 @@
             log('Loading WASM module...');
 
             try {
-                // Import WASM module
-                wasm = await import('inspire-client-wasm');
+                // Import WASM module from relative path
+                wasm = await import('../../../crates/inspire-client-wasm/pkg/inspire_client_wasm.js');
                 await wasm.default();
                 log('WASM loaded', 'success');
 
@@ -239,7 +273,7 @@
                     throw new Error(`Failed to fetch stem index: ${stemRes.status}`);
                 }
                 const stemData = new Uint8Array(await stemRes.arrayBuffer());
-                const stemIndex = wasm.StemIndex.from_bytes(stemData);
+                const stemIndex = new wasm.StemIndex(stemData);
                 
                 const stemCount = stemIndex.count;
                 const stemIndexSize = (stemData.length / 1024).toFixed(1);
@@ -249,7 +283,7 @@
                 // Initialize PIR client
                 log('Downloading CRS (Common Reference String)...');
                 const pirClient = new wasm.PirClient(serverUrl);
-                await pirClient.init('state');
+                await pirClient.init('hot');
                 log('PIR client initialized', 'success');
                 
                 // Store for later use
@@ -267,6 +301,7 @@
                 statusEl.className = 'status success';
                 document.getElementById('queryBtn').disabled = false;
                 document.getElementById('customQueryBtn').disabled = false;
+                document.getElementById('indexQueryBtn').disabled = false;
                 
                 log('StateClient ready!', 'success');
             } catch (err) {
@@ -297,8 +332,14 @@
                 const slotHex = bytesToHex(storageSlot);
                 log(`Storage slot: 0x${slotHex.slice(0, 16)}...`);
                 
-                // Look up PIR index
-                const pirIndex = window.stemIndex.lookup_storage(usdcAddress, storageSlot);
+                // Compute tree_index from storage slot
+                const treeIndex = wasm.computeStorageTreeIndex(storageSlot);
+                log(`Tree index subindex: ${treeIndex[31]}`);
+                
+                // Look up PIR index using stem offset (for sparse USDC database)
+                // For USDC-only database, we use lookup_stem_offset which returns 
+                // the direct index without adding subindex
+                const pirIndex = window.stemIndex.lookup_stem_offset(usdcAddress, treeIndex);
                 if (pirIndex < 0) {
                     log('Slot not found in database (balance may be 0)', 'error');
                     document.getElementById('usdcBalance').textContent = '0 USDC';
@@ -334,6 +375,49 @@
                 document.getElementById('resultSection').style.display = 'block';
                 
                 log(`Balance: ${balanceFormatted} USDC (${elapsed}ms)`, 'success');
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        window.queryByIndex = async function() {
+            const pirIndex = parseInt(document.getElementById('pirIndexInput').value);
+            if (isNaN(pirIndex) || pirIndex < 0) {
+                log('Please enter a valid PIR index', 'error');
+                return;
+            }
+
+            const startTime = performance.now();
+            log(`Querying PIR index ${pirIndex}...`);
+
+            try {
+                // Execute PIR query directly by index
+                const result = await window.pirClient.query_binary(BigInt(pirIndex));
+                
+                // Extract value (last 32 bytes of 84-byte entry)
+                // Entry format: address[20] + tree_index[32] + value[32]
+                let valueBytes;
+                if (result.length >= 84) {
+                    valueBytes = result.slice(52, 84);
+                } else if (result.length === 32) {
+                    valueBytes = result;
+                } else {
+                    throw new Error(`Unexpected result size: ${result.length}`);
+                }
+                
+                const valueHex = '0x' + bytesToHex(valueBytes);
+                const balance = bytesToBigInt(valueBytes);
+                const balanceFormatted = formatUsdc(balance);
+                
+                const elapsed = (performance.now() - startTime).toFixed(0);
+                
+                // Update UI
+                document.getElementById('rawValue').textContent = valueHex;
+                document.getElementById('indexUsdcValue').textContent = `${balanceFormatted} USDC`;
+                document.getElementById('indexQueryTime').textContent = `${elapsed}ms`;
+                document.getElementById('indexResultSection').style.display = 'block';
+                
+                log(`Value: ${balanceFormatted} USDC (${elapsed}ms)`, 'success');
             } catch (err) {
                 log(`Error: ${err.message}`, 'error');
             }
