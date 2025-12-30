@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InsPIRe WASM Client - Smoke Test</title>
+    <title>InsPIRe PIR Client</title>
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -13,17 +13,19 @@
             background: #1a1a2e;
             color: #eee;
         }
-        h1 { color: #7f5af0; }
+        h1 { color: #7f5af0; margin-bottom: 5px; }
+        .subtitle { color: #888; margin-top: 0; }
         .section {
             background: #16213e;
             border-radius: 8px;
             padding: 20px;
             margin: 20px 0;
         }
-        label { display: block; margin: 10px 0 5px; }
+        .section h3 { margin-top: 0; color: #7f5af0; }
+        label { display: block; margin: 10px 0 5px; font-size: 14px; }
         input, button {
-            padding: 10px;
-            border-radius: 4px;
+            padding: 12px;
+            border-radius: 6px;
             border: none;
             font-size: 14px;
         }
@@ -38,44 +40,188 @@
             color: white;
             cursor: pointer;
             margin-top: 10px;
+            min-width: 150px;
         }
         button:hover { background: #6b4ed8; }
         button:disabled { background: #555; cursor: not-allowed; }
+        
+        /* Progress bar styles */
+        .progress-container {
+            display: none;
+            margin-top: 15px;
+        }
+        .progress-container.active {
+            display: block;
+        }
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 13px;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #0a0a1a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #7f5af0, #2ecc71);
+            border-radius: 4px;
+            transition: width 0.2s ease;
+            width: 0%;
+        }
+        .progress-fill.indeterminate {
+            width: 30%;
+            animation: indeterminate 1.5s infinite ease-in-out;
+        }
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
+        
+        /* Status badge */
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status.ready { background: #2ecc71; color: #000; }
+        .status.loading { background: #f39c12; color: #000; }
+        .status.error { background: #e74c3c; }
+        .status.idle { background: #444; }
+        
+        /* Result display */
+        .result-box {
+            display: none;
+            background: #0a0a1a;
+            border: 1px solid #7f5af0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .result-box.visible { display: block; }
+        .result-box h4 { margin: 0 0 10px 0; color: #7f5af0; }
+        .result-value {
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+            background: #16213e;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .result-meta {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        
         #log {
             background: #0a0a0a;
             border-radius: 4px;
             padding: 15px;
             font-family: monospace;
-            font-size: 13px;
-            max-height: 400px;
+            font-size: 12px;
+            max-height: 200px;
             overflow-y: auto;
             white-space: pre-wrap;
         }
         .success { color: #2ecc71; }
         .error { color: #e74c3c; }
         .info { color: #3498db; }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: #0a0a1a;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-value { font-size: 20px; font-weight: bold; color: #7f5af0; }
+        .stat-label { font-size: 11px; color: #888; margin-top: 4px; }
     </style>
 </head>
 <body>
-    <h1>InsPIRe WASM Client</h1>
-    <p>Browser-based PIR client smoke test</p>
+    <h1>InsPIRe PIR Client</h1>
+    <p class="subtitle">Private Information Retrieval for Ethereum State</p>
 
     <div class="section">
-        <label for="serverUrl">Server URL:</label>
+        <h3>1. Connect to Server</h3>
+        <label for="serverUrl">PIR Server URL:</label>
         <input type="text" id="serverUrl" value="http://104.204.142.13:3001">
 
         <label for="lane">Lane:</label>
         <input type="text" id="lane" value="hot">
 
-        <button id="initBtn" onclick="initClient()">Initialize Client</button>
+        <div style="display: flex; align-items: center; margin-top: 15px;">
+            <button id="initBtn" onclick="initClient()">Initialize Client</button>
+            <span id="clientStatus" class="status idle">Not connected</span>
+        </div>
+        
+        <div id="initProgress" class="progress-container">
+            <div class="progress-label">
+                <span id="initProgressLabel">Loading...</span>
+                <span id="initProgressPercent"></span>
+            </div>
+            <div class="progress-bar">
+                <div id="initProgressFill" class="progress-fill"></div>
+            </div>
+        </div>
+        
+        <div class="stats" id="serverStats" style="display: none;">
+            <div class="stat-box">
+                <div class="stat-value" id="statEntries">-</div>
+                <div class="stat-label">Entries</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="statCrsSize">-</div>
+                <div class="stat-label">CRS Downloaded</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="statRingDim">-</div>
+                <div class="stat-label">Ring Dimension</div>
+            </div>
+        </div>
     </div>
 
     <div class="section">
-        <label for="index">Query Index:</label>
-        <input type="number" id="index" value="0" min="0">
+        <h3>2. Query Storage Entry</h3>
+        <label for="index">Entry Index (0 to <span id="maxIndex">?</span>):</label>
+        <input type="number" id="index" value="1000" min="0">
 
-        <button id="queryBtn" onclick="runQuery()" disabled>Run PIR Query</button>
-        <button id="queryBinaryBtn" onclick="runQueryBinary()" disabled>Run Binary Query</button>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button id="queryBinaryBtn" onclick="runQueryBinary()" disabled>Query (Binary)</button>
+            <button id="queryBtn" onclick="runQuery()" disabled style="background: #444;">Query (JSON)</button>
+        </div>
+        
+        <div id="queryProgress" class="progress-container">
+            <div class="progress-label">
+                <span id="queryProgressLabel">Processing...</span>
+                <span id="queryProgressPercent"></span>
+            </div>
+            <div class="progress-bar">
+                <div id="queryProgressFill" class="progress-fill"></div>
+            </div>
+        </div>
+        
+        <div id="resultBox" class="result-box">
+            <h4>Query Result</h4>
+            <div class="result-value" id="resultValue"></div>
+            <div class="result-meta">
+                <span>Index: <strong id="resultIndex"></strong></span> |
+                <span>Size: <strong id="resultSize"></strong> bytes</span> |
+                <span>Time: <strong id="resultTime"></strong></span>
+            </div>
+        </div>
     </div>
 
     <div class="section">
@@ -87,6 +233,7 @@
         import init, { PirClient } from '../pkg/inspire_client_wasm.js';
 
         let client = null;
+        let entryCount = 0;
 
         function log(msg, type = '') {
             const logDiv = document.getElementById('log');
@@ -96,75 +243,250 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        function setStatus(status, text) {
+            const el = document.getElementById('clientStatus');
+            el.className = `status ${status}`;
+            el.textContent = text;
+        }
+
+        function showProgress(id, show, label = '', percent = null, indeterminate = false) {
+            const container = document.getElementById(id);
+            const labelEl = document.getElementById(id + 'Label');
+            const percentEl = document.getElementById(id + 'Percent');
+            const fillEl = document.getElementById(id + 'Fill');
+            
+            if (show) {
+                container.classList.add('active');
+                labelEl.textContent = label;
+                if (indeterminate) {
+                    fillEl.classList.add('indeterminate');
+                    fillEl.style.width = '30%';
+                    percentEl.textContent = '';
+                } else {
+                    fillEl.classList.remove('indeterminate');
+                    fillEl.style.width = (percent || 0) + '%';
+                    percentEl.textContent = percent !== null ? Math.round(percent) + '%' : '';
+                }
+            } else {
+                container.classList.remove('active');
+            }
+        }
+
+        function formatNumber(n) {
+            return n.toLocaleString();
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // Fetch with progress tracking
+        async function fetchWithProgress(url, onProgress) {
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const contentLength = response.headers.get('Content-Length');
+            const total = contentLength ? parseInt(contentLength, 10) : 0;
+            
+            if (!total) {
+                // No content-length header, fallback to regular fetch
+                const data = await response.json();
+                return data;
+            }
+            
+            const reader = response.body.getReader();
+            let received = 0;
+            const chunks = [];
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                chunks.push(value);
+                received += value.length;
+                
+                if (onProgress) {
+                    onProgress(received, total);
+                }
+            }
+            
+            // Combine chunks
+            const combined = new Uint8Array(received);
+            let position = 0;
+            for (const chunk of chunks) {
+                combined.set(chunk, position);
+                position += chunk.length;
+            }
+            
+            // Parse JSON
+            const text = new TextDecoder().decode(combined);
+            return JSON.parse(text);
+        }
+
         window.initClient = async function() {
             const serverUrl = document.getElementById('serverUrl').value;
             const lane = document.getElementById('lane').value;
+            
+            document.getElementById('initBtn').disabled = true;
+            setStatus('loading', 'Connecting...');
 
             try {
+                // Step 1: Load WASM
+                showProgress('initProgress', true, 'Loading WASM module...', 5);
                 log('Loading WASM module...', 'info');
                 await init();
                 log('WASM module loaded', 'success');
 
-                log(`Creating client for ${serverUrl}...`, 'info');
+                // Step 2: Check server version
+                showProgress('initProgress', true, 'Checking server...', 10);
+                log('Checking server...', 'info');
+                const infoResp = await fetch(`${serverUrl}/info`);
+                const info = await infoResp.json();
+                log(`Server version: v${info.pir_params_version}, ${formatNumber(info.hot_entries)} entries`, 'success');
+
+                // Step 3: Fetch CRS with progress
+                showProgress('initProgress', true, 'Downloading CRS (0%)...', 10);
+                log('Downloading CRS...', 'info');
+                
+                const crsStart = performance.now();
+                let lastLoggedPercent = 0;
+                
+                const crsData = await fetchWithProgress(`${serverUrl}/crs/${lane}`, (received, total) => {
+                    const percent = 10 + (received / total) * 70; // 10-80%
+                    const downloadPercent = (received / total) * 100;
+                    showProgress('initProgress', true, 
+                        `Downloading CRS (${formatBytes(received)} / ${formatBytes(total)})...`, 
+                        percent);
+                    
+                    // Log every 20%
+                    if (downloadPercent - lastLoggedPercent >= 20) {
+                        log(`  ${Math.round(downloadPercent)}% (${formatBytes(received)})`, 'info');
+                        lastLoggedPercent = downloadPercent;
+                    }
+                });
+                
+                const crsTime = ((performance.now() - crsStart) / 1000).toFixed(1);
+                log(`CRS downloaded in ${crsTime}s`, 'success');
+
+                // Step 4: Create and init client
+                showProgress('initProgress', true, 'Initializing client...', 85);
+                log('Creating client...', 'info');
+                
                 client = new PirClient(serverUrl);
+                
+                // Use init_with_crs for pre-fetched CRS
+                showProgress('initProgress', true, 'Generating secret key...', 90);
+                await client.init_with_crs(
+                    lane,
+                    crsData.crs,
+                    BigInt(crsData.entry_count),
+                    JSON.stringify(crsData.shard_config)
+                );
+                
+                entryCount = Number(crsData.entry_count);
 
-                log(`Initializing for lane: ${lane}...`, 'info');
-                await client.init(lane);
+                // Step 5: Done
+                showProgress('initProgress', true, 'Ready!', 100);
+                log(`Client ready! ${formatNumber(entryCount)} entries`, 'success');
 
-                const entryCount = client.entry_count();
-                log(`Client ready! Entry count: ${entryCount}`, 'success');
-
+                // Update UI
+                setStatus('ready', 'Connected');
                 document.getElementById('queryBtn').disabled = false;
                 document.getElementById('queryBinaryBtn').disabled = false;
+                document.getElementById('maxIndex').textContent = formatNumber(entryCount - 1);
+                
+                // Show stats
+                document.getElementById('serverStats').style.display = 'grid';
+                document.getElementById('statEntries').textContent = formatNumber(entryCount);
+                document.getElementById('statCrsSize').textContent = formatBytes(crsData.crs.length);
+                document.getElementById('statRingDim').textContent = '2048';
+                
+                setTimeout(() => showProgress('initProgress', false), 1000);
+                
             } catch (e) {
                 log(`Error: ${e}`, 'error');
+                setStatus('error', 'Failed');
+                showProgress('initProgress', false);
                 console.error(e);
             }
+            
+            document.getElementById('initBtn').disabled = false;
         };
 
         window.runQuery = async function() {
-            if (!client) {
-                log('Client not initialized', 'error');
-                return;
-            }
-
-            const index = BigInt(document.getElementById('index').value);
-
-            try {
-                log(`Querying index ${index} (JSON)...`, 'info');
-                const start = performance.now();
-                const result = await client.query(index);
-                const elapsed = (performance.now() - start).toFixed(0);
-
-                log(`Query completed in ${elapsed}ms`, 'success');
-                log(`Result (${result.length} bytes): ${bytesToHex(result)}`, 'info');
-            } catch (e) {
-                log(`Query error: ${e}`, 'error');
-                console.error(e);
-            }
+            await executeQuery(false);
         };
 
         window.runQueryBinary = async function() {
+            await executeQuery(true);
+        };
+
+        async function executeQuery(binary) {
             if (!client) {
                 log('Client not initialized', 'error');
                 return;
             }
 
-            const index = BigInt(document.getElementById('index').value);
+            const indexValue = parseInt(document.getElementById('index').value, 10);
+            const mode = binary ? 'binary' : 'JSON';
+            
+            if (isNaN(indexValue) || indexValue < 0 || indexValue >= entryCount) {
+                log(`Invalid index. Must be 0-${entryCount - 1}`, 'error');
+                return;
+            }
+            
+            document.getElementById('queryBtn').disabled = true;
+            document.getElementById('queryBinaryBtn').disabled = true;
+            document.getElementById('resultBox').classList.remove('visible');
 
             try {
-                log(`Querying index ${index} (binary)...`, 'info');
+                // Show progress
+                showProgress('queryProgress', true, 'Generating query...', 20);
+                log(`Querying index ${indexValue} (${mode})...`, 'info');
+                
+                await new Promise(r => setTimeout(r, 50)); // Let UI update
+                
+                showProgress('queryProgress', true, 'Sending to server...', 40, true);
+                
                 const start = performance.now();
-                const result = await client.query_binary(index);
-                const elapsed = (performance.now() - start).toFixed(0);
+                // Pass as BigInt to WASM
+                const result = binary 
+                    ? await client.query_binary(BigInt(indexValue)) 
+                    : await client.query(BigInt(indexValue));
+                const elapsed = performance.now() - start;
+                
+                showProgress('queryProgress', true, 'Done!', 100);
+                
+                const elapsedStr = elapsed > 1000 
+                    ? (elapsed / 1000).toFixed(2) + 's'
+                    : elapsed.toFixed(0) + 'ms';
 
-                log(`Binary query completed in ${elapsed}ms`, 'success');
-                log(`Result (${result.length} bytes): ${bytesToHex(result)}`, 'info');
+                log(`Query completed in ${elapsedStr}`, 'success');
+                
+                // Show result (first 32 bytes is the actual value)
+                const hex = bytesToHex(result.slice(0, 32));
+                document.getElementById('resultValue').textContent = hex;
+                document.getElementById('resultIndex').textContent = indexValue.toString();
+                document.getElementById('resultSize').textContent = '32';
+                document.getElementById('resultTime').textContent = elapsedStr;
+                document.getElementById('resultBox').classList.add('visible');
+                
+                setTimeout(() => showProgress('queryProgress', false), 500);
+                
             } catch (e) {
                 log(`Query error: ${e}`, 'error');
+                showProgress('queryProgress', false);
                 console.error(e);
             }
-        };
+            
+            document.getElementById('queryBtn').disabled = false;
+            document.getElementById('queryBinaryBtn').disabled = false;
+        }
 
         function bytesToHex(bytes) {
             return Array.from(bytes)
@@ -172,7 +494,7 @@
                 .join('');
         }
 
-        log('Page loaded. Click "Initialize Client" to start.', 'info');
+        log('Ready. Click "Initialize Client" to connect.', 'info');
     </script>
 </body>
 </html>

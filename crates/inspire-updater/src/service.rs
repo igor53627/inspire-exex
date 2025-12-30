@@ -214,10 +214,9 @@ impl UpdaterService {
                     continue;
                 }
 
-                let (changed, bucket_delta) = self.state.apply_entries_with_delta(
-                    block_delta.block_number,
-                    block_delta.deltas.clone(),
-                );
+                let (changed, bucket_delta) = self
+                    .state
+                    .apply_entries_with_delta(block_delta.block_number, block_delta.deltas.clone());
 
                 if !changed.is_empty() {
                     info!(

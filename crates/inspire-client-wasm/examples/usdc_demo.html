@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USDC Balance Lookup - InsPIRe PIR Demo</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #7f5af0; margin-bottom: 5px; }
+        .subtitle { color: #888; margin-top: 0; }
+        .section {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .section h3 { margin-top: 0; color: #7f5af0; }
+        label { display: block; margin: 10px 0 5px; font-size: 14px; }
+        input, select, button {
+            padding: 12px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+        }
+        input, select {
+            background: #0f3460;
+            color: #eee;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background: #7f5af0;
+            color: white;
+            cursor: pointer;
+            margin-top: 10px;
+            min-width: 180px;
+        }
+        button:hover { background: #6b4ed8; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #0f3460;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            border: none;
+            color: #888;
+        }
+        .tab.active {
+            background: #7f5af0;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 15px;
+        }
+        .progress-container.active { display: block; }
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 13px;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #0a0a1a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #7f5af0, #2ecc71);
+            border-radius: 4px;
+            transition: width 0.2s ease;
+            width: 0%;
+        }
+        .progress-fill.indeterminate {
+            width: 30%;
+            animation: indeterminate 1.5s infinite ease-in-out;
+        }
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status.ready { background: #2ecc71; color: #000; }
+        .status.loading { background: #f39c12; color: #000; }
+        .status.error { background: #e74c3c; }
+        .status.idle { background: #444; }
+        
+        .result-box {
+            display: none;
+            background: #0a0a1a;
+            border: 1px solid #7f5af0;
+            border-radius: 6px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+        .result-box.visible { display: block; }
+        .result-box h4 { margin: 0 0 10px 0; color: #7f5af0; }
+        
+        .balance-display {
+            font-size: 36px;
+            font-weight: bold;
+            color: #2ecc71;
+            text-align: center;
+            padding: 20px;
+        }
+        .balance-display .symbol {
+            font-size: 24px;
+            color: #888;
+            margin-left: 10px;
+        }
+        
+        .result-value {
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+            background: #16213e;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .result-meta {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        
+        #log {
+            background: #0a0a0a;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .success { color: #2ecc71; }
+        .error { color: #e74c3c; }
+        .info { color: #3498db; }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: #0a0a1a;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-value { font-size: 20px; font-weight: bold; color: #7f5af0; }
+        .stat-label { font-size: 11px; color: #888; margin-top: 4px; }
+        
+        .info-box {
+            background: #0f3460;
+            border-left: 3px solid #3498db;
+            padding: 12px 15px;
+            margin: 15px 0;
+            font-size: 13px;
+        }
+        .info-box strong { color: #3498db; }
+        
+        .privacy-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #2ecc71;
+            color: #000;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <h1>USDC Balance Lookup <span class="privacy-badge">Private</span></h1>
+    <p class="subtitle">Query your USDC balance privately using PIR - the server never sees your address</p>
+
+    <div class="section">
+        <h3>1. Connect to PIR Server</h3>
+        <label for="serverUrl">PIR Server URL:</label>
+        <input type="text" id="serverUrl" value="http://104.204.142.13:3001">
+
+        <div style="display: flex; align-items: center; margin-top: 15px;">
+            <button id="initBtn">Initialize Client</button>
+            <span id="clientStatus" class="status idle">Not connected</span>
+        </div>
+        
+        <div id="initProgress" class="progress-container">
+            <div class="progress-label">
+                <span id="initProgressLabel">Loading...</span>
+                <span id="initProgressPercent"></span>
+            </div>
+            <div class="progress-bar">
+                <div id="initProgressFill" class="progress-fill"></div>
+            </div>
+        </div>
+        
+        <div class="stats" id="serverStats" style="display: none;">
+            <div class="stat-box">
+                <div class="stat-value" id="statEntries">-</div>
+                <div class="stat-label">Total Entries</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="statCrsSize">-</div>
+                <div class="stat-label">CRS Downloaded</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="statStemIndex">-</div>
+                <div class="stat-label">Stems</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>2. Query Balance</h3>
+        
+        <div class="tabs">
+            <button class="tab active">USDC Balance</button>
+            <button class="tab">Raw Index</button>
+        </div>
+        
+        <div id="tab-usdc" class="tab-content active">
+            <div class="info-box">
+                <strong>Sepolia Testnet Demo</strong><br>
+                USDC Contract: 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238<br>
+                All computation happens client-side. The server only sees your encrypted PIR query.<br>
+                <em style="color: #2ecc71;">1 PIR query per lookup via stem index.</em>
+            </div>
+            
+            <label for="ethAddress">Your Ethereum Address:</label>
+            <input type="text" id="ethAddress" placeholder="0x..." value="">
+            
+            <button id="queryUsdcBtn" disabled>Query USDC Balance</button>
+            
+            <div id="usdcResultBox" class="result-box">
+                <h4>Your USDC Balance</h4>
+                <div class="balance-display">
+                    <span id="usdcBalance">0.00</span>
+                    <span class="symbol">USDC</span>
+                </div>
+                <div class="result-meta">
+                    <div>Storage Slot: <code id="usdcSlot"></code></div>
+                    <div>Stem: <span id="usdcStem"></span> | PIR Index: <span id="usdcPirIndex"></span></div>
+                    <div>Query Time: <span id="usdcTime"></span></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-raw" class="tab-content">
+            <label for="index">Entry Index (0 to <span id="maxIndex">?</span>):</label>
+            <input type="number" id="index" value="1000" min="0">
+
+            <button id="queryBtn" disabled>Query Entry</button>
+            
+            <div id="resultBox" class="result-box">
+                <h4>Raw Entry (64 bytes)</h4>
+                <div class="result-value" id="resultValue"></div>
+                <div class="result-meta">
+                    <span>Index: <strong id="resultIndex"></strong></span> |
+                    <span>Time: <strong id="resultTime"></strong></span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="queryProgress" class="progress-container">
+            <div class="progress-label">
+                <span id="queryProgressLabel">Processing...</span>
+                <span id="queryProgressPercent"></span>
+            </div>
+            <div class="progress-bar">
+                <div id="queryProgressFill" class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Log</h3>
+        <div id="log"></div>
+    </div>
+
+    <script type="module">
+        import init, { 
+            PirClient, 
+            StemIndex,
+            compute_balance_slot_hex,
+            sepolia_usdc 
+        } from '../pkg/inspire_client_wasm.js';
+
+        let client = null;
+        let stemIndex = null;
+        let entryCount = 0;
+        let hasStemIndex = false;
+
+        const SEPOLIA_USDC = '1c7d4b196cb0c7b01d743fbc6116a902379c7238';
+        const USDC_BALANCE_SLOT = 9;
+        const USDC_DECIMALS = 6;
+        const ENTRY_SIZE = 32; // value only (server has 32-byte entries)
+
+        function log(msg, type = '') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+            const className = type ? `class="${type}"` : '';
+            logDiv.innerHTML += `<span ${className}>[${timestamp}] ${msg}</span>\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function setStatus(status, text) {
+            const el = document.getElementById('clientStatus');
+            el.className = `status ${status}`;
+            el.textContent = text;
+        }
+
+        function showProgress(id, show, label = '', percent = null, indeterminate = false) {
+            const container = document.getElementById(id);
+            const labelEl = document.getElementById(id + 'Label');
+            const percentEl = document.getElementById(id + 'Percent');
+            const fillEl = document.getElementById(id + 'Fill');
+            
+            if (show) {
+                container.classList.add('active');
+                labelEl.textContent = label;
+                if (indeterminate) {
+                    fillEl.classList.add('indeterminate');
+                    fillEl.style.width = '30%';
+                    percentEl.textContent = '';
+                } else {
+                    fillEl.classList.remove('indeterminate');
+                    fillEl.style.width = (percent || 0) + '%';
+                    percentEl.textContent = percent !== null ? Math.round(percent) + '%' : '';
+                }
+            } else {
+                container.classList.remove('active');
+            }
+        }
+
+        function formatNumber(n) {
+            return n.toLocaleString();
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[onclick*="${tabId}"]`).classList.add('active');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        }
+
+        async function fetchWithProgress(url, onProgress) {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const contentLength = response.headers.get('Content-Length');
+            const total = contentLength ? parseInt(contentLength, 10) : 0;
+            
+            if (!total) {
+                return await response.json();
+            }
+            
+            const reader = response.body.getReader();
+            let received = 0;
+            const chunks = [];
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                if (onProgress) onProgress(received, total);
+            }
+            
+            const combined = new Uint8Array(received);
+            let position = 0;
+            for (const chunk of chunks) {
+                combined.set(chunk, position);
+                position += chunk.length;
+            }
+            
+            const text = new TextDecoder().decode(combined);
+            return JSON.parse(text);
+        }
+
+        async function fetchBinaryWithProgress(url, onProgress) {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const contentLength = response.headers.get('Content-Length');
+            const total = contentLength ? parseInt(contentLength, 10) : 0;
+            
+            const reader = response.body.getReader();
+            let received = 0;
+            const chunks = [];
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                if (onProgress) onProgress(received, total);
+            }
+            
+            const combined = new Uint8Array(received);
+            let position = 0;
+            for (const chunk of chunks) {
+                combined.set(chunk, position);
+                position += chunk.length;
+            }
+            
+            return combined;
+        }
+
+        async function initClient() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            
+            document.getElementById('initBtn').disabled = true;
+            setStatus('loading', 'Connecting...');
+
+            try {
+                showProgress('initProgress', true, 'Loading WASM module...', 5);
+                log('Loading WASM module...', 'info');
+                await init();
+                log('WASM module loaded', 'success');
+
+                showProgress('initProgress', true, 'Checking server...', 10);
+                log('Checking server...', 'info');
+                const infoResp = await fetch(`${serverUrl}/info`);
+                const info = await infoResp.json();
+                log(`Server version: v${info.pir_params_version}, ${formatNumber(info.hot_entries)} entries`, 'success');
+
+                showProgress('initProgress', true, 'Downloading CRS...', 15);
+                log('Downloading CRS...', 'info');
+                
+                const crsStart = performance.now();
+                const crsData = await fetchWithProgress(`${serverUrl}/crs/hot`, (received, total) => {
+                    const percent = 15 + (received / total) * 50;
+                    showProgress('initProgress', true, 
+                        `Downloading CRS (${formatBytes(received)} / ${formatBytes(total)})...`, 
+                        percent);
+                });
+                
+                const crsTime = ((performance.now() - crsStart) / 1000).toFixed(1);
+                log(`CRS downloaded in ${crsTime}s`, 'success');
+
+                showProgress('initProgress', true, 'Checking for stem index...', 70);
+                log('Checking for stem index...', 'info');
+                
+                try {
+                    const indexStart = performance.now();
+                    const indexResp = await fetch(`${serverUrl}/index/stems`);
+                    if (indexResp.ok) {
+                        const indexData = new Uint8Array(await indexResp.arrayBuffer());
+                        stemIndex = new StemIndex(indexData);
+                        hasStemIndex = true;
+                        const indexTime = ((performance.now() - indexStart) / 1000).toFixed(1);
+                        log(`Stem index loaded: ${stemIndex.count} stems, ${formatBytes(indexData.length)} in ${indexTime}s`, 'success');
+                    } else {
+                        log('Stem index not available - USDC lookup disabled, raw queries only', 'info');
+                        hasStemIndex = false;
+                    }
+                } catch (e) {
+                    log('Stem index not available - USDC lookup disabled, raw queries only', 'info');
+                    hasStemIndex = false;
+                }
+
+                showProgress('initProgress', true, 'Creating client...', 87);
+                log('Creating client...', 'info');
+                
+                client = new PirClient(serverUrl);
+                
+                showProgress('initProgress', true, 'Generating secret key...', 92);
+                await client.init_with_crs(
+                    'hot',
+                    crsData.crs,
+                    BigInt(crsData.entry_count),
+                    JSON.stringify(crsData.shard_config)
+                );
+                
+                entryCount = Number(crsData.entry_count);
+
+                showProgress('initProgress', true, 'Ready!', 100);
+                log(`Client ready! ${formatNumber(entryCount)} entries`, 'success');
+
+                setStatus('ready', 'Connected');
+                document.getElementById('queryBtn').disabled = false;
+                document.getElementById('queryUsdcBtn').disabled = !hasStemIndex;
+                document.getElementById('maxIndex').textContent = formatNumber(entryCount - 1);
+                
+                document.getElementById('serverStats').style.display = 'grid';
+                document.getElementById('statEntries').textContent = formatNumber(entryCount);
+                document.getElementById('statCrsSize').textContent = formatBytes(crsData.crs.length);
+                document.getElementById('statStemIndex').textContent = hasStemIndex ? formatNumber(stemIndex.count) : 'N/A';
+                
+                setTimeout(() => showProgress('initProgress', false), 1000);
+                
+            } catch (e) {
+                log(`Error: ${e}`, 'error');
+                setStatus('error', 'Failed');
+                showProgress('initProgress', false);
+                console.error(e);
+            }
+            
+            document.getElementById('initBtn').disabled = false;
+        };
+
+        async function queryUsdcBalance() {
+            if (!client || !hasStemIndex) {
+                log('Client not initialized or stem index not available', 'error');
+                return;
+            }
+
+            const ethAddress = document.getElementById('ethAddress').value.trim();
+            if (!ethAddress || !ethAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+                log('Please enter a valid Ethereum address (0x...)', 'error');
+                return;
+            }
+            
+            document.getElementById('queryUsdcBtn').disabled = true;
+            document.getElementById('usdcResultBox').classList.remove('visible');
+
+            try {
+                showProgress('queryProgress', true, 'Computing storage slot...', 10);
+                log(`Looking up USDC balance for ${ethAddress.slice(0,10)}...`, 'info');
+                
+                // Compute storage slot: keccak256(address || 9)
+                const storageSlot = compute_balance_slot_hex(ethAddress, USDC_BALANCE_SLOT);
+                log(`Storage slot: 0x${storageSlot.slice(0, 16)}...`, 'info');
+                document.getElementById('usdcSlot').textContent = '0x' + storageSlot;
+                
+                showProgress('queryProgress', true, 'Looking up stem index...', 20);
+                
+                // Stem index lookup: O(log n) binary search, returns exact PIR index
+                const addressBytes = hexToBytes(SEPOLIA_USDC);
+                const slotBytes = hexToBytes(storageSlot);
+                const pirIndex = stemIndex.lookup_storage(addressBytes, slotBytes);
+                
+                if (pirIndex < 0) {
+                    log('Entry not found in stem index - address may not have USDC balance', 'error');
+                    document.getElementById('usdcStem').textContent = 'Not found';
+                    showProgress('queryProgress', false);
+                    document.getElementById('queryUsdcBtn').disabled = false;
+                    return;
+                }
+                
+                log(`PIR index: ${pirIndex}`, 'info');
+                document.getElementById('usdcStem').textContent = 'Found';
+                document.getElementById('usdcPirIndex').textContent = pirIndex.toString();
+                
+                showProgress('queryProgress', true, 'Sending encrypted query...', 40, true);
+                log(`Querying PIR index ${pirIndex}...`, 'info');
+                
+                const start = performance.now();
+                const result = await client.query_binary(BigInt(pirIndex));
+                const elapsed = performance.now() - start;
+                
+                showProgress('queryProgress', true, 'Decrypting result...', 92);
+                
+                // Value is at offset 52 in 84-byte entry (address:20 + tree_index:32 + value:32)
+                const value = ENTRY_SIZE === 84 ? result.slice(52, 84) : result.slice(0, 32);
+                const balance = bytesToBigInt(value);
+                const formattedBalance = formatUsdcBalance(balance);
+                
+                const elapsedStr = elapsed > 1000 
+                    ? (elapsed / 1000).toFixed(2) + 's'
+                    : elapsed.toFixed(0) + 'ms';
+                
+                log(`Balance: ${formattedBalance} USDC (${elapsedStr})`, 'success');
+                
+                document.getElementById('usdcBalance').textContent = formattedBalance;
+                document.getElementById('usdcTime').textContent = elapsedStr;
+                document.getElementById('usdcResultBox').classList.add('visible');
+                
+                showProgress('queryProgress', true, 'Done!', 100);
+                setTimeout(() => showProgress('queryProgress', false), 500);
+                
+            } catch (e) {
+                log(`Query error: ${e}`, 'error');
+                showProgress('queryProgress', false);
+                console.error(e);
+            }
+            
+            document.getElementById('queryUsdcBtn').disabled = false;
+        };
+
+        async function runQueryBinary() {
+            if (!client) {
+                log('Client not initialized', 'error');
+                return;
+            }
+
+            const indexValue = parseInt(document.getElementById('index').value, 10);
+            
+            if (isNaN(indexValue) || indexValue < 0 || indexValue >= entryCount) {
+                log(`Invalid index. Must be 0-${entryCount - 1}`, 'error');
+                return;
+            }
+            
+            document.getElementById('queryBtn').disabled = true;
+            document.getElementById('resultBox').classList.remove('visible');
+
+            try {
+                showProgress('queryProgress', true, 'Generating query...', 20);
+                log(`Querying index ${indexValue}...`, 'info');
+                
+                await new Promise(r => setTimeout(r, 50));
+                
+                showProgress('queryProgress', true, 'Sending to server...', 40, true);
+                
+                const start = performance.now();
+                const result = await client.query_binary(BigInt(indexValue));
+                const elapsed = performance.now() - start;
+                
+                showProgress('queryProgress', true, 'Done!', 100);
+                
+                const elapsedStr = elapsed > 1000 
+                    ? (elapsed / 1000).toFixed(2) + 's'
+                    : elapsed.toFixed(0) + 'ms';
+
+                log(`Query completed in ${elapsedStr}`, 'success');
+                
+                const hex = bytesToHex(result.slice(0, 64));
+                document.getElementById('resultValue').textContent = hex;
+                document.getElementById('resultIndex').textContent = indexValue.toString();
+                document.getElementById('resultTime').textContent = elapsedStr;
+                document.getElementById('resultBox').classList.add('visible');
+                
+                setTimeout(() => showProgress('queryProgress', false), 500);
+                
+            } catch (e) {
+                log(`Query error: ${e}`, 'error');
+                showProgress('queryProgress', false);
+                console.error(e);
+            }
+            
+            document.getElementById('queryBtn').disabled = false;
+        };
+
+        function hexToBytes(hex) {
+            hex = hex.replace(/^0x/, '');
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < bytes.length; i++) {
+                bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+            }
+            return bytes;
+        }
+
+        function bytesToHex(bytes) {
+            return Array.from(bytes)
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        function bytesToBigInt(bytes) {
+            let result = 0n;
+            for (let i = 0; i < bytes.length; i++) {
+                result = (result << 8n) | BigInt(bytes[i]);
+            }
+            return result;
+        }
+
+        function formatUsdcBalance(balance) {
+            const decimals = USDC_DECIMALS;
+            const divisor = 10n ** BigInt(decimals);
+            const whole = balance / divisor;
+            const fraction = balance % divisor;
+            const fractionStr = fraction.toString().padStart(decimals, '0');
+            return `${whole.toLocaleString()}.${fractionStr}`;
+        }
+
+        // Attach event handlers after module loads
+        document.getElementById('initBtn').onclick = initClient;
+        document.getElementById('queryUsdcBtn').onclick = queryUsdcBalance;
+        document.getElementById('queryBtn').onclick = runQueryBinary;
+        document.querySelectorAll('.tab').forEach(tab => {
+            const tabId = tab.textContent.toLowerCase().includes('usdc') ? 'usdc' : 'raw';
+            tab.onclick = () => switchTab(tabId);
+        });
+
+        log('Ready. Click "Initialize Client" to connect.', 'info');
+    </script>
+</body>
+</html>

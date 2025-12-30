@@ -113,6 +113,54 @@ impl PirClient {
         Ok(())
     }
 
+    /// Initialize with pre-fetched CRS JSON (for progress tracking in JS)
+    ///
+    /// Use this when you want to fetch the CRS in JavaScript with progress events,
+    /// then pass the response to this method.
+    #[wasm_bindgen]
+    pub async fn init_with_crs(
+        &mut self,
+        lane: &str,
+        crs_json: &str,
+        entry_count: u64,
+        shard_config_json: &str,
+    ) -> Result<(), JsValue> {
+        check_webcrypto_available()?;
+
+        let http = HttpClient::new(self.server_url.clone());
+
+        console_log!("Parsing CRS...");
+        let crs: ServerCrs =
+            serde_json::from_str(crs_json).map_err(|e| PirError::Serialization(e.to_string()))?;
+
+        let shard_config: ShardConfig = serde_json::from_str(shard_config_json)
+            .map_err(|e| PirError::Serialization(e.to_string()))?;
+
+        console_log!("Generating secret key...");
+        let mut sampler = GaussianSampler::new(crs.params.sigma);
+        let raw_key = inspire_pir::rlwe::RlweSecretKey::generate(&crs.params, &mut sampler);
+        let secret_key = SecureSecretKey::new(raw_key);
+
+        console_log!("Client initialized: {} entries", entry_count);
+
+        self.inner = Some(ClientInner {
+            http,
+            crs,
+            secret_key,
+            entry_count,
+            shard_config,
+            lane: lane.to_string(),
+        });
+
+        Ok(())
+    }
+
+    /// Get server URL for manual fetching
+    #[wasm_bindgen]
+    pub fn server_url(&self) -> String {
+        self.server_url.clone()
+    }
+
     #[wasm_bindgen]
     pub fn entry_count(&self) -> Result<u64, JsValue> {
         let inner = self.inner.as_ref().ok_or(PirError::NotInitialized)?;
@@ -202,7 +250,7 @@ impl PirClient {
             &inner.crs,
             &client_state,
             &response,
-            64,
+            inner.shard_config.entry_size_bytes,
             InspireVariant::OnePacking,
         )
         .map_err(|e| PirError::Pir(e.to_string()))?;

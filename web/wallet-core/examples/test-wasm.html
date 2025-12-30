@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head><title>WASM Test</title></head>
+<body>
+<h1>WASM Test</h1>
+<pre id="log"></pre>
+<script type="module">
+const log = (msg) => {
+    document.getElementById('log').textContent += msg + '\n';
+    console.log(msg);
+};
+
+try {
+    log('Importing WASM module...');
+    const wasm = await import('../../../crates/inspire-client-wasm/pkg/inspire_client_wasm.js');
+    log('Initializing WASM...');
+    await wasm.default();
+    log('WASM initialized!');
+    
+    // Test StemIndex
+    log('Testing sepolia_usdc()...');
+    const usdc = wasm.sepolia_usdc();
+    log('USDC address: 0x' + usdc.address_hex);
+    log('USDC slot: ' + usdc.balance_slot);
+    
+    // Test stem index fetch
+    log('Fetching stem index...');
+    const res = await fetch('http://104.204.142.13:3002/index/stems');
+    const data = new Uint8Array(await res.arrayBuffer());
+    log('Stem index size: ' + data.length + ' bytes');
+    
+    const stemIndex = new wasm.StemIndex(data);
+    log('Stem count: ' + stemIndex.count);
+    
+    log('SUCCESS!');
+} catch (e) {
+    log('ERROR: ' + e.message);
+    console.error(e);
+}
+</script>
+</body>
+</html>

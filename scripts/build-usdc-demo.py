@@ -68,20 +68,30 @@ def compute_balance_slot(wallet: bytes) -> bytes:
     encoded = bytes(12) + wallet + bytes(28) + struct.pack(">I", BALANCE_SLOT)
     return keccak256(encoded)
 
+def add_with_offset(slot: bytes, offset: bytes) -> bytes:
+    """Add offset to slot, return 32-byte result (big-endian)."""
+    result = bytearray(32)
+    carry = 0
+    for i in range(31, -1, -1):
+        s = slot[i] + offset[i] + carry
+        result[i] = s & 0xff
+        carry = s >> 8
+    return bytes(result)
+
+# MAIN_STORAGE_OFFSET_BYTES = 256^31 = 0x01 followed by 31 zeros (big-endian)
+MAIN_STORAGE_OFFSET_BYTES = bytes([1]) + bytes(31)
+
 def compute_storage_tree_index(slot: bytes) -> bytes:
-    """Compute EIP-7864 tree_index for storage slot."""
-    slot_value = int.from_bytes(slot, "big")
-    MAIN_STORAGE_OFFSET = 256
-    HEADER_STORAGE_OFFSET = 64
+    """Compute EIP-7864 tree_index for storage slot (matches Rust impl)."""
+    # Check if slot < 64 (fits in account stem)
+    is_small = all(b == 0 for b in slot[:31]) and slot[31] < 64
     
-    if slot_value < HEADER_STORAGE_OFFSET:
-        stem_pos = 0
-        subindex = HEADER_STORAGE_OFFSET + slot_value
+    if is_small:
+        # Small slot: place in account stem at subindex 64 + slot
+        return bytes(31) + bytes([64 + slot[31]])
     else:
-        stem_pos = MAIN_STORAGE_OFFSET + (slot_value // 256)
-        subindex = slot_value % 256
-    
-    return stem_pos.to_bytes(31, "big") + bytes([subindex])
+        # Large slot: add MAIN_STORAGE_OFFSET to slot
+        return add_with_offset(slot, MAIN_STORAGE_OFFSET_BYTES)
 
 def compute_stem(address: bytes, tree_index: bytes) -> bytes:
     """Compute 31-byte stem from address and tree_index per EIP-7864."""

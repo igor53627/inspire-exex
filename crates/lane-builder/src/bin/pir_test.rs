@@ -33,8 +33,6 @@ struct CrsResponse {
     shard_config: ShardConfig,
 }
 
-
-
 #[derive(Debug, Serialize)]
 struct QueryRequest {
     query: inspire_pir::ClientQuery,
@@ -71,10 +69,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     let crs: ServerCrs = serde_json::from_str(&crs_resp.crs)?;
-    tracing::info!(
-        ring_dim = crs.params.ring_dim,
-        "CRS loaded"
-    );
+    tracing::info!(ring_dim = crs.params.ring_dim, "CRS loaded");
 
     // Generate secret key
     let mut sampler = GaussianSampler::new(crs.params.sigma);
@@ -82,8 +77,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Secret key generated");
 
     // Create query
-    let (client_state, query) = pir_query(&crs, args.index, &crs_resp.shard_config, &sk, &mut sampler)
-        .map_err(|e| anyhow::anyhow!("Query generation failed: {}", e))?;
+    let (client_state, query) =
+        pir_query(&crs, args.index, &crs_resp.shard_config, &sk, &mut sampler)
+            .map_err(|e| anyhow::anyhow!("Query generation failed: {}", e))?;
     tracing::info!("Query generated");
 
     // Send query

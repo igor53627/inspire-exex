@@ -7,12 +7,16 @@ mod bucket_index;
 mod client;
 mod error;
 mod security;
+mod slots;
 mod transport;
 mod ubt_index;
 
 pub use bucket_index::{BucketIndex, RangeDeltaInfo};
 pub use client::PirClient;
 pub use error::PirError;
+pub use slots::{
+    compute_balance_slot, compute_balance_slot_hex, mainnet_usdc, sepolia_usdc, TokenInfo,
+};
 pub use ubt_index::{compute_stem_js, compute_tree_key_js, get_subindex_js, StemIndex};
 
 use wasm_bindgen::prelude::*;

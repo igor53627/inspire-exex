@@ -21,3 +21,4 @@ Thumbs.db
 *.log
 web/wallet-core/node_modules/
 web/wallet-core/package-lock.json
+crates/inspire-client-wasm/examples/node_modules/
