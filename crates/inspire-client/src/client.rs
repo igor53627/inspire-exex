@@ -262,7 +262,7 @@ impl TwoLaneClient {
             &client_state,
             &server_response,
             32,
-            InspireVariant::OnePacking,
+            InspireVariant::TwoPacking,
         )
         .map_err(|e| ClientError::InvalidResponse(e.to_string()))?;
 

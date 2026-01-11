@@ -207,7 +207,7 @@ impl PirClient {
             &client_state,
             &response.response,
             64,
-            InspireVariant::OnePacking,
+            InspireVariant::TwoPacking,
         )
         .map_err(|e| PirError::Pir(e.to_string()))?;
 
@@ -251,7 +251,7 @@ impl PirClient {
             &client_state,
             &response,
             inner.shard_config.entry_size_bytes,
-            InspireVariant::OnePacking,
+            InspireVariant::TwoPacking,
         )
         .map_err(|e| PirError::Pir(e.to_string()))?;
 

@@ -8,8 +8,7 @@ use inspire_pir::math::GaussianSampler;
 use inspire_pir::params::{InspireVariant, ShardConfig};
 use inspire_pir::rlwe::RlweSecretKey;
 use inspire_pir::{
-    extract_with_variant, query as pir_query, query_switched as pir_query_switched, ServerCrs,
-    SwitchedClientQuery,
+    extract_with_variant, query_seeded as pir_query_seeded, ServerCrs, SeededClientQuery,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -29,9 +28,9 @@ struct Args {
     #[arg(long, default_value = "0")]
     index: u64,
 
-    /// Use switched+seeded query (~75% smaller)
+    /// Use full (non-seeded) query (debug)
     #[arg(long)]
-    switched: bool,
+    full: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,13 +40,8 @@ struct CrsResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct QueryRequest {
-    query: inspire_pir::ClientQuery,
-}
-
-#[derive(Debug, Serialize)]
-struct SwitchedQueryRequest {
-    query: SwitchedClientQuery,
+struct SeededQueryRequest {
+    query: SeededClientQuery,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
         server = %args.server,
         lane = %args.lane,
         index = args.index,
-        switched = args.switched,
+        full = args.full,
         "Testing PIR query"
     );
 
@@ -89,57 +83,34 @@ async fn main() -> anyhow::Result<()> {
     let sk = RlweSecretKey::generate(&crs.params, &mut sampler);
     tracing::info!("Secret key generated");
 
-    // Create query
-    let (client_state, full_query, switched_query, endpoint) = if args.switched {
-        let (state, query) =
-            pir_query_switched(&crs, args.index, &crs_resp.shard_config, &sk, &mut sampler)
-                .map_err(|e| anyhow::anyhow!("Query generation failed: {}", e))?;
-        (
-            state,
-            None,
-            Some(query),
-            format!("{}/query/{}/switched", args.server, args.lane),
-        )
+    // Create query (seeded by default)
+    let (client_state, seeded_query, endpoint) = if args.full {
+        return Err(anyhow::anyhow!(
+            "Full query path disabled; use seeded queries for TwoPacking"
+        ));
     } else {
         let (state, query) =
-            pir_query(&crs, args.index, &crs_resp.shard_config, &sk, &mut sampler)
+            pir_query_seeded(&crs, args.index, &crs_resp.shard_config, &sk, &mut sampler)
                 .map_err(|e| anyhow::anyhow!("Query generation failed: {}", e))?;
-        (
-            state,
-            Some(query),
-            None,
-            format!("{}/query/{}", args.server, args.lane),
-        )
+        (state, query, format!("{}/query/{}/seeded", args.server, args.lane))
     };
     tracing::info!("Query generated");
 
     // Send query
     tracing::info!("Sending query to server...");
     let start = std::time::Instant::now();
-    let resp: QueryResponse = if let Some(query) = switched_query {
-        client
-            .post(endpoint)
-            .json(&SwitchedQueryRequest { query })
-            .send()
-            .await?
-            .json()
-            .await?
-    } else {
-        client
-            .post(endpoint)
-            .json(&QueryRequest {
-                query: full_query.expect("full query missing"),
-            })
-            .send()
-            .await?
-            .json()
-            .await?
-    };
+    let resp: QueryResponse = client
+        .post(endpoint)
+        .json(&SeededQueryRequest { query: seeded_query })
+        .send()
+        .await?
+        .json()
+        .await?;
     let elapsed = start.elapsed();
     tracing::info!(elapsed_ms = elapsed.as_millis(), "Response received");
 
     // Extract result (32 bytes per entry)
-    let variant = InspireVariant::OnePacking;
+    let variant = InspireVariant::TwoPacking;
     let entry_size = 32;
     let entry = extract_with_variant(&crs, &client_state, &resp.response, entry_size, variant)
         .map_err(|e| anyhow::anyhow!("Extraction failed: {}", e))?;
