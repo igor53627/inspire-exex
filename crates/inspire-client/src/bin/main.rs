@@ -23,7 +23,10 @@ async fn main() -> anyhow::Result<()> {
 
     let server_url = &args[1];
     let contract_hex = &args[2];
-    let slot_hex = args.get(3).map(|s| s.as_str()).unwrap_or("0x00");
+    let mut slot_hex = "0x00";
+    for arg in args.iter().skip(3) {
+        slot_hex = arg;
+    }
 
     let contract = parse_address(contract_hex)?;
     let slot = parse_slot(slot_hex)?;

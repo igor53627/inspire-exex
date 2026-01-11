@@ -268,6 +268,7 @@ pub fn default_params() -> InspireParams {
     InspireParams {
         ring_dim: 2048,
         q: 1152921504606830593, // 2^60 - 2^14 + 1
+        crt_moduli: vec![1152921504606830593],
         p: 65537,               // Fermat prime F4, ensures gcd(d, p) = 1 for mod_inverse
         sigma: 6.4,
         gadget_base: 1 << 20,
@@ -281,6 +282,7 @@ pub fn test_params() -> InspireParams {
     InspireParams {
         ring_dim: 256,
         q: 1152921504606830593,
+        crt_moduli: vec![1152921504606830593],
         p: 65537, // Fermat prime F4, ensures gcd(d, p) = 1 for mod_inverse
         sigma: 6.4,
         gadget_base: 1 << 20,
